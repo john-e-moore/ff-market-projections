@@ -166,6 +166,16 @@ def test_negative_weekly_yards_are_retained_but_negative_counting_stats_fail(tmp
         prepare_historical_data(_write_frame(tmp_path, frame, "negative_counts.csv"), _historical_config())
 
 
+def test_one_extra_player_game_is_a_documented_trade_bye_warning(tmp_path: Path) -> None:
+    frame = pd.read_csv(FIXTURE)
+    player = frame.loc[(frame["season"] == 2019) & (frame["player_id"] == "00-QB")].iloc[[0]].copy()
+    extra = pd.concat([player.assign(week=week, attempts=0, carries=0, targets=0, passing_yards=0, passing_tds=0, rushing_yards=0, rushing_tds=0, receiving_yards=0, receiving_tds=0, receptions=0) for week in range(3, 18)], ignore_index=True)
+    prepared = prepare_historical_data(_write_frame(tmp_path, pd.concat([frame, extra], ignore_index=True), "trade_bye.csv"), _historical_config())
+    warning = next(check for check in prepared.validation["checks"] if check["name"] == "historical.player_schedule_exceptions")
+    assert warning["severity"] == "warning"
+    assert not warning["passed"]
+
+
 def test_inadequate_calibration_cohort_fails_closed() -> None:
     config = _historical_config()
     config["minimum_player_seasons_per_stat"] = 999

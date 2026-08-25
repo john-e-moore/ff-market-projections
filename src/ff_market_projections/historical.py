@@ -525,9 +525,14 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
                 f"Historical player-season {stat} exceeds the plausibility limit {maximum}",
                 {"stat": stat, "limit": maximum, "rows": int(bad.sum())},
             )
-    bad_games = seasons["games"] > seasons["schedule_games"]
-    if bad_games.any():
-        raise HistoricalDataError("historical.schedule_lengths", "Player games exceed the known regular-season schedule length", {"rows": int(bad_games.sum())})
+    schedule_exceptions = seasons["games"] > seasons["schedule_games"]
+    impossible_games = seasons["games"] > seasons["schedule_games"] + 1
+    if impossible_games.any():
+        raise HistoricalDataError(
+            "historical.schedule_lengths",
+            "Player games exceed the known regular-season schedule length by more than one game",
+            {"rows": int(impossible_games.sum()), "maximum_games": int(seasons.loc[impossible_games, "games"].max())},
+        )
 
     player_seasons = _long_player_seasons(seasons)
     duplicate_output = player_seasons.duplicated(["season", "gsis_player_id", "team", "stat"], keep=False)
@@ -545,7 +550,7 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
         CheckResult("historical.weekly_keys_unique", True, details={"rows": int(len(weekly)), "duplicate_groups_aggregated": int(weekly.attrs.get("duplicate_week_groups_aggregated", 0))}),
         CheckResult("historical.weekly_to_season_reconciled", True, details={"player_seasons": int(len(seasons)), "stats": len(TARGET_STATS)}),
         CheckResult("historical.output_keys_unique", True, details={"rows": int(len(player_seasons)), "key": ["season", "gsis_player_id", "team", "stat"]}),
-        CheckResult("historical.schedule_lengths", True, details={"sixteen_game_seasons": int((seasons["schedule_games"] == 16).sum()), "seventeen_game_seasons": int((seasons["schedule_games"] == 17).sum())}),
+        CheckResult("historical.schedule_lengths", True, details={"sixteen_game_seasons": int((seasons["schedule_games"] == 16).sum()), "seventeen_game_seasons": int((seasons["schedule_games"] == 17).sum()), "player_schedule_exceptions": int(schedule_exceptions.sum())}),
         CheckResult("historical.no_lookahead", True, details={"baselines": int(len(predictions))}),
     ]
     missingness_rates = {
@@ -560,6 +565,14 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
             "warning",
             f"{column} missingness rate is {rate:.2%}",
             {"field": column, "missingness_rate": rate},
+        ))
+    if schedule_exceptions.any():
+        checks.append(CheckResult(
+            "historical.player_schedule_exceptions",
+            False,
+            "warning",
+            "Player-season games exceed a single-team schedule by one; likely traded across bye weeks",
+            {"rows": int(schedule_exceptions.sum()), "maximum_games": int(seasons.loc[schedule_exceptions, "games"].max())},
         ))
     minimum = int(historical_config["minimum_player_seasons_per_stat"])
     cohort_counts: dict[str, int] = {}

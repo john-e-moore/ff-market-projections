@@ -444,7 +444,7 @@ Historical validation must check:
 - regular-season totals independently reconcile to weekly sums
 - player/season/stat keys are unique
 - games and all seven target stats are finite; touchdowns and receptions are nonnegative, while passing, rushing, and receiving yardage may be signed because football totals can be negative
-- known schedule-length changes are represented correctly
+- known schedule-length changes are represented correctly; a player-season may exceed a single team schedule by one game when a trade crosses bye weeks, which is retained and reported as a warning, while larger excesses are errors
 - lagged features contain no look-ahead leakage
 - player IDs, display names, positions, and teams have documented missingness rates
 - calibration cohort counts meet configured per-stat minimums
