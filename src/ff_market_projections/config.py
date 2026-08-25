@@ -100,10 +100,19 @@ def _validate(values: dict[str, Any]) -> None:
         _expect(historical, key, "historical")
     if historical["season_type"] != "REG":
         raise ConfigError("historical.season_type must be REG")
-    for key in ("ingest_start_season", "calibration_start_season", "latest_completed_season", "prior_seasons", "minimum_training_seasons", "holdout_seasons", "minimum_player_seasons_per_stat"):
+    for key in ("ingest_start_season", "calibration_start_season", "latest_completed_season", "prior_seasons", "recency_half_life_seasons", "minimum_training_seasons", "holdout_seasons", "minimum_player_seasons_per_stat"):
         _positive(historical[key], f"historical.{key}")
     if not historical["ingest_start_season"] <= historical["calibration_start_season"] <= historical["latest_completed_season"]:
         raise ConfigError("historical season window must satisfy ingest_start <= calibration_start <= latest_completed")
+    if historical["ingest_start_season"] < 1999:
+        raise ConfigError("historical.ingest_start_season must be 1999 or later")
+    if not 1 <= historical["prior_seasons"] <= 3:
+        raise ConfigError("historical.prior_seasons must be between 1 and 3")
+    if historical["minimum_training_seasons"] > historical["prior_seasons"]:
+        raise ConfigError("historical.minimum_training_seasons cannot exceed historical.prior_seasons")
+    run_start_season = int(run["season"][:4])
+    if historical["latest_completed_season"] >= run_start_season:
+        raise ConfigError("historical.latest_completed_season must precede the configured run season")
     filters = historical["prior_opportunity_filters"]
     if not isinstance(filters, dict):
         raise ConfigError("historical.prior_opportunity_filters must be a TOML table")
