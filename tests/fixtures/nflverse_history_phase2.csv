@@ -1,0 +1,18 @@
+season,season_type,week,player_id,player_name,position,team,attempts,carries,targets,passing_yards,passing_tds,rushing_yards,rushing_tds,receiving_yards,receiving_tds,receptions
+2019,REG,1,00-QB,Quarter Back,QB,QBS,20,2,0,240,2,8,0,0,0,0
+2019,REG,2,00-QB,Quarter Back,QB,QBS,25,2,0,260,2,7,0,0,0,0
+2019,REG,1,00-RB,Running Back,RB,RBS,0,15,3,0,0,100,1,20,0,2
+2019,REG,1,00-WR,Wide Receiver,WR,WRS,0,1,10,0,0,5,0,120,1,8
+2020,REG,1,00-QB,Quarter Back,QB,QBS,22,3,0,255,2,12,0,0,0,0
+2020,REG,2,00-QB,Quarter Back,QB,QBS,24,3,0,265,3,10,1,0,0,0
+2020,REG,1,00-RB,Running Back,RB,RBS,0,16,4,0,0,110,1,25,0,3
+2020,REG,1,00-WR,Wide Receiver,WR,WRS,0,1,11,0,0,4,0,130,1,9
+2021,REG,1,00-QB,Quarter Back,QB,QBS,24,3,0,275,3,14,0,0,0,0
+2021,REG,2,00-QB,Quarter Back,QB,QBS,26,3,0,285,2,12,0,0,0,0
+2021,REG,1,00-RB,Running Back,RB,RBS,0,17,4,0,0,120,1,30,0,3
+2021,REG,1,00-WR,Wide Receiver,WR,WRS,0,1,,0,0,3,0,140,1,10
+2022,REG,1,00-QB,Quarter Back,QB,QBS,26,4,0,295,3,16,1,0,0,0
+2022,REG,2,00-QB,Quarter Back,QB,QBS,28,3,0,305,3,14,0,0,0,0
+2022,REG,1,00-RB,Running Back,RB,RBS,0,18,5,0,0,130,2,35,0,4
+2022,REG,1,00-WR,Wide Receiver,WR,WRS,0,1,13,0,0,2,0,150,2,11
+2022,REG,1,00-RK,Rookie Receiver,WR,RKS,0,0,,0,0,0,0,70,1,5

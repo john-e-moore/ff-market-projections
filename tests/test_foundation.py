@@ -30,6 +30,7 @@ def test_config_loads_and_effective_copy_preserves_semantics(tmp_path: Path) -> 
         ("unexpected = true\n", "Unknown setting"),
         ("weight = -1.0", "must be a positive number"),
         ("probability_floor = 0.99\nprobability_ceiling = 0.98", "probability_floor"),
+        ("prior_seasons = 4", "prior_seasons must be between 1 and 3"),
     ],
 )
 def test_invalid_settings_fail_usefully(tmp_path: Path, replacement: str, message: str) -> None:
@@ -38,8 +39,10 @@ def test_invalid_settings_fail_usefully(tmp_path: Path, replacement: str, messag
         source += replacement
     elif replacement.startswith("weight"):
         source = source.replace("weight = 1.0", replacement, 1)
-    else:
+    elif replacement.startswith("probability_floor"):
         source = source.replace("probability_floor = 0.02\nprobability_ceiling = 0.98", replacement)
+    else:
+        source = source.replace("prior_seasons = 3", replacement)
     path = tmp_path / "bad.toml"
     path.write_text(source)
     with pytest.raises(ConfigError, match=message):
