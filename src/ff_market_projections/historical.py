@@ -194,23 +194,15 @@ def _canonical_weekly(raw: pd.DataFrame, historical_config: dict[str, Any]) -> t
         raise HistoricalDataError("historical.player_ids_present", "Historical input contains missing GSIS player IDs", {"missing_rows": int(ids.isna().sum())})
     weekly["gsis_player_id"] = ids
 
-    duplicate_key = ["season", "week", "gsis_player_id", "team"]
-    duplicates = weekly.duplicated(duplicate_key, keep=False)
-    if duplicates.any():
-        raise HistoricalDataError(
-            "historical.weekly_keys_unique",
-            "Historical input contains duplicate player-week-team rows",
-            {"duplicate_rows": int(duplicates.sum()), "key": duplicate_key},
-        )
-
     numeric = ["passing_attempts", "rushing_attempts", "targets", *TARGET_STATS]
     for column in numeric:
         weekly[column] = pd.to_numeric(weekly[column], errors="coerce")
     for stat in TARGET_STATS:
-        if weekly[stat].isna().any() or not _finite_nonnegative(weekly[stat]):
+        values = weekly[stat].dropna().to_numpy(dtype=float)
+        if weekly[stat].isna().any() or not np.isfinite(values).all():
             raise HistoricalDataError(
                 "historical.target_values_valid",
-                f"{stat} contains missing, negative, or non-finite values",
+                f"{stat} contains missing or non-finite values",
                 {"stat": stat, "missing_rows": int(weekly[stat].isna().sum())},
             )
     for opportunity in ("passing_attempts", "rushing_attempts", "targets"):
@@ -219,6 +211,52 @@ def _canonical_weekly(raw: pd.DataFrame, historical_config: dict[str, Any]) -> t
     for optional in ("age", "experience"):
         if optional in weekly:
             weekly[optional] = pd.to_numeric(weekly[optional], errors="coerce")
+
+    duplicate_key = ["season", "week", "gsis_player_id", "team"]
+    duplicates = weekly.duplicated(duplicate_key, keep=False)
+    duplicate_groups = 0
+    if duplicates.any():
+        duplicate_groups = int(weekly.loc[duplicates].groupby(duplicate_key, dropna=False).ngroups)
+        identity_columns = ["player_name", "position"]
+        conflicting = []
+        exact_duplicate_groups = []
+        for key, group in weekly.loc[duplicates].groupby(duplicate_key, dropna=False, sort=False):
+            if group.drop(columns=["_source_index", *numeric, "age", "experience"], errors="ignore").drop_duplicates().shape[0] > 1:
+                if any(group[column].map(_nonempty_text).nunique(dropna=True) > 1 for column in identity_columns):
+                    conflicting.append(key)
+            if group.drop(columns=["_source_index"], errors="ignore").drop_duplicates().shape[0] == 1:
+                exact_duplicate_groups.append(key)
+        if conflicting:
+            raise HistoricalDataError(
+                "historical.weekly_keys_unique",
+                "Historical input contains duplicate player-week-team rows with conflicting identity fields",
+                {"duplicate_groups": len(conflicting), "key": duplicate_key, "sample": conflicting[:5]},
+            )
+        if exact_duplicate_groups:
+            raise HistoricalDataError(
+                "historical.weekly_keys_unique",
+                "Historical input contains exact duplicate player-week-team rows",
+                {"duplicate_groups": len(exact_duplicate_groups), "key": duplicate_key, "sample": exact_duplicate_groups[:5]},
+            )
+        # nflverse can split one weekly player record into complementary rows
+        # (for example, a passing row and an all-zero row). Sum numeric fields
+        # and retain the latest nonempty descriptive values for that source week.
+        grouped_rows: list[dict[str, Any]] = []
+        for key, group in weekly.groupby(duplicate_key, dropna=False, sort=False):
+            group = group.sort_values("_source_index")
+            row = dict(zip(duplicate_key, key if isinstance(key, tuple) else (key,)))
+            row["_source_index"] = int(group["_source_index"].iloc[0])
+            row["season_type"] = str(group["season_type"].iloc[-1])
+            for column in numeric:
+                row[column] = float(group[column].sum(min_count=1)) if group[column].notna().any() else np.nan
+            for column in ("player_name", "position", "age", "experience"):
+                if column in group:
+                    values = group[column].dropna()
+                    row[column] = values.iloc[-1] if not values.empty else np.nan
+            grouped_rows.append(row)
+        nonduplicates = weekly.loc[~duplicates].to_dict(orient="records")
+        weekly = pd.DataFrame.from_records(nonduplicates + grouped_rows)
+        weekly.attrs["duplicate_week_groups_aggregated"] = duplicate_groups
 
     return weekly.sort_values(["season", "gsis_player_id", "week", "team"], na_position="last").reset_index(drop=True), resolved
 
@@ -455,6 +493,13 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
     _reconcile_optional_summaries(raw, weekly, resolved, seasons)
 
     for stat, maximum in _PLAUSIBLE_SEASON_MAX.items():
+        negative = seasons[stat] < 0
+        if negative.any():
+            raise HistoricalDataError(
+                "historical.target_totals_nonnegative",
+                f"Historical player-season {stat} contains negative totals",
+                {"stat": stat, "rows": int(negative.sum()), "minimum": float(seasons.loc[negative, stat].min())},
+            )
         bad = seasons[stat] > maximum
         if bad.any():
             raise HistoricalDataError(
@@ -479,7 +524,7 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
     checks = [
         CheckResult("historical.seasons_complete", True, details={"first": int(seasons["season"].min()), "last": int(seasons["season"].max()), "count": int(seasons["season"].nunique())}),
         CheckResult("historical.regular_season_only", True, details={"season_type": historical_config["season_type"]}),
-        CheckResult("historical.weekly_keys_unique", True, details={"rows": int(len(weekly))}),
+        CheckResult("historical.weekly_keys_unique", True, details={"rows": int(len(weekly)), "duplicate_groups_aggregated": int(weekly.attrs.get("duplicate_week_groups_aggregated", 0))}),
         CheckResult("historical.weekly_to_season_reconciled", True, details={"player_seasons": int(len(seasons)), "stats": len(TARGET_STATS)}),
         CheckResult("historical.output_keys_unique", True, details={"rows": int(len(player_seasons)), "key": ["season", "gsis_player_id", "team", "stat"]}),
         CheckResult("historical.schedule_lengths", True, details={"sixteen_game_seasons": int((seasons["schedule_games"] == 16).sum()), "seventeen_game_seasons": int((seasons["schedule_games"] == 17).sum())}),

@@ -44,7 +44,7 @@ def _configured_toml(*, minimum_cohort: int = 1) -> str:
         .replace('season = "2026-27"', 'season = "2023-24"')
         .replace("ingest_start_season = 1999", "ingest_start_season = 2019")
         .replace("calibration_start_season = 2011", "calibration_start_season = 2021")
-        .replace("latest_completed_season = 2025", "latest_completed_season = 2022")
+        .replace("latest_completed_season = 2024", "latest_completed_season = 2022")
         .replace("minimum_player_seasons_per_stat = 200", f"minimum_player_seasons_per_stat = {minimum_cohort}")
         .replace("passing_attempts = 100", "passing_attempts = 10")
         .replace("rushing_attempts = 25", "rushing_attempts = 5")
@@ -136,6 +136,27 @@ def test_independent_season_summary_mismatch_fails_reconciliation(tmp_path: Path
     frame.loc[(frame["season"] == 2021) & (frame["player_id"] == "00-QB"), "season_passing_yards"] = 999
     with pytest.raises(HistoricalDataError, match="do not reconcile"):
         prepare_historical_data(_write_frame(tmp_path, frame), _historical_config())
+
+
+def test_complementary_duplicate_week_rows_are_aggregated_but_exact_duplicates_fail(tmp_path: Path) -> None:
+    frame = pd.read_csv(FIXTURE)
+    duplicate = frame.loc[(frame["season"] == 2020) & (frame["player_id"] == "00-QB") & (frame["week"] == 1)].copy()
+    duplicate.loc[:, ["attempts", "carries", "targets", *["passing_yards", "passing_tds", "rushing_yards", "rushing_tds", "receiving_yards", "receiving_tds", "receptions"]]] = 0
+    combined = pd.concat([frame, duplicate], ignore_index=True)
+    prepared = prepare_historical_data(_write_frame(tmp_path, combined, "complementary.csv"), _historical_config())
+    weekly_check = next(check for check in prepared.validation["checks"] if check["name"] == "historical.weekly_keys_unique")
+    assert weekly_check["details"]["duplicate_groups_aggregated"] == 1
+
+    exact = pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
+    with pytest.raises(HistoricalDataError, match="exact duplicate"):
+        prepare_historical_data(_write_frame(tmp_path, exact, "exact.csv"), _historical_config())
+
+
+def test_negative_weekly_yards_fail_at_nonnegative_season_total_gate(tmp_path: Path) -> None:
+    frame = pd.read_csv(FIXTURE)
+    frame.loc[0, "passing_yards"] = -600
+    with pytest.raises(HistoricalDataError, match="negative totals"):
+        prepare_historical_data(_write_frame(tmp_path, frame, "negative.csv"), _historical_config())
 
 
 def test_inadequate_calibration_cohort_fails_closed() -> None:
