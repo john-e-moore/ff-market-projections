@@ -69,3 +69,27 @@ run's `artifacts/` directory. It fails closed for incomplete seasons, reconcilia
 errors, implausible totals, insufficient calibration cohorts, or any look-ahead
 feature. Baseline eligibility uses prior-season opportunity only; missing opportunity
 is preserved as missing and never converted to zero.
+
+## Phase 3 market validation and normalization
+
+Validate the three collected market snapshots before any pricing or identity work:
+
+```bash
+python scripts/validate_collections.py \
+  --run-dir runs/RUN_ID \
+  --config runs/RUN_ID/config/effective.toml
+```
+
+Then create `artifacts/normalized_markets.csv` and its validation report:
+
+```bash
+python scripts/normalize_markets.py \
+  --run-dir runs/RUN_ID \
+  --config runs/RUN_ID/config/effective.toml
+```
+
+The collection gate checks freshness, season, source-reported quality, unique source IDs,
+valid two-sided sportsbook markets, Kalshi threshold and order-book domains, and
+cross-source timestamp skew. Normalization emits one row per sportsbook side and one YES
+row per Kalshi threshold, preserving raw JSON locators. It intentionally does not de-vig
+odds, infer means, reconcile player identities, or silently discard rows.
