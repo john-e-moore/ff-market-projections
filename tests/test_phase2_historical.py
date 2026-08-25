@@ -152,11 +152,16 @@ def test_complementary_duplicate_week_rows_are_aggregated_but_exact_duplicates_f
         prepare_historical_data(_write_frame(tmp_path, exact, "exact.csv"), _historical_config())
 
 
-def test_negative_weekly_yards_fail_at_nonnegative_season_total_gate(tmp_path: Path) -> None:
+def test_negative_weekly_yards_are_retained_but_negative_counting_stats_fail(tmp_path: Path) -> None:
     frame = pd.read_csv(FIXTURE)
     frame.loc[0, "passing_yards"] = -600
-    with pytest.raises(HistoricalDataError, match="negative totals"):
-        prepare_historical_data(_write_frame(tmp_path, frame, "negative.csv"), _historical_config())
+    prepared = prepare_historical_data(_write_frame(tmp_path, frame, "negative_yards.csv"), _historical_config())
+    value = prepared.player_seasons.query("season == 2019 and gsis_player_id == '00-QB' and stat == 'passing_yards'").iloc[0]
+    assert value["stat_total"] == -340
+
+    frame.loc[0, "receptions"] = -1
+    with pytest.raises(HistoricalDataError, match="invalid negative counting values"):
+        prepare_historical_data(_write_frame(tmp_path, frame, "negative_counts.csv"), _historical_config())
 
 
 def test_inadequate_calibration_cohort_fails_closed() -> None:

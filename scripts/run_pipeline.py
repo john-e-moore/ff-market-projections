@@ -94,7 +94,10 @@ def _collector_task(name: str, script: str, output: Path, log: Path, arguments: 
         details["historical"] = {"gzip_valid": True, "covered_seasons": seasons, "columns": header}
         if offline_input is None:
             try:
-                details["historical"]["response"] = json.loads(command_result["stdout"]).get("response", {})
+                collector_summary = json.loads(command_result["stdout"])
+                details["historical"]["response"] = collector_summary.get("response", {})
+                if collector_summary.get("cache") is not None:
+                    details["historical"]["cache"] = collector_summary["cache"]
             except json.JSONDecodeError:
                 pass
     else:
@@ -133,6 +136,8 @@ def main() -> None:
     parser.add_argument("--runs-dir", type=Path, default=Path("runs"))
     parser.add_argument("--offline-input-dir", type=Path)
     parser.add_argument("--collector-timeout-seconds", type=float, default=180.0)
+    parser.add_argument("--historical-cache-dir", type=Path, default=ROOT / "data" / "cache" / "nflverse_player_stats")
+    parser.add_argument("--refresh-historical-cache", action="store_true")
     args = parser.parse_args()
     try:
         config = load_config(args.config)
@@ -148,7 +153,7 @@ def main() -> None:
         Task("collect_draftkings", lambda: _collector_task("draftkings", "fetch_draftkings_nfl_player_stats_ou.py", raw / "draftkings.json", logs / "collect_draftkings.log", [], args.collector_timeout_seconds, inputs / "draftkings.json" if inputs else None)),
         Task("collect_fanduel", lambda: _collector_task("fanduel", "fetch_fanduel_nfl_player_season_props.py", raw / "fanduel.json", logs / "collect_fanduel.log", ["--state", source_config["fanduel"]["state"], "--timezone", config.values["run"]["timezone"]], args.collector_timeout_seconds, inputs / "fanduel.json" if inputs else None)),
         Task("collect_kalshi", lambda: _collector_task("kalshi", "fetch_kalshi_nfl_season_stats.py", raw / "kalshi.json", logs / "collect_kalshi.log", [], args.collector_timeout_seconds, inputs / "kalshi.json" if inputs else None)),
-        Task("collect_nflverse_history", lambda: _collector_task("nflverse", "fetch_nflverse_player_history.py", raw / "nflverse_player_stats.csv.gz", logs / "collect_nflverse_history.log", ["--url", config.values["historical"]["url"]], args.collector_timeout_seconds, inputs / "nflverse_player_stats.csv.gz" if inputs else None, historical=True)),
+        Task("collect_nflverse_history", lambda: _collector_task("nflverse", "fetch_nflverse_player_history.py", raw / "nflverse_player_stats.csv.gz", logs / "collect_nflverse_history.log", ["--url", config.values["historical"]["url"], "--cache-dir", str(args.historical_cache_dir), *( ["--refresh-cache"] if args.refresh_historical_cache else [])], args.collector_timeout_seconds, inputs / "nflverse_player_stats.csv.gz" if inputs else None, historical=True)),
     ]
     results = run_dag(tasks)
     _update_run(run_dir, results, offline)

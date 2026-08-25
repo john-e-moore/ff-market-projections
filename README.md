@@ -47,6 +47,11 @@ collection failure marks the run failed while retaining its collector logs and a
 successfully collected raw inputs. A successful Phase 1 collection remains `running`:
 later phases are responsible for validation, workbook production, and final completion.
 
+The nflverse snapshot is persisted in a content-addressed cache under
+`data/cache/nflverse_player_stats/`; each run receives its own immutable copy in
+`runs/RUN_ID/raw/`. To force a new nflverse download, pass
+`--refresh-historical-cache` to `run_pipeline.py`.
+
 ## Phase 2 historical preparation
 
 Prepare the run-scoped nflverse snapshot after collection:

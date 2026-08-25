@@ -395,7 +395,7 @@ Requirements:
 - Capture stdout/stderr separately in source logs.
 - Record command, exit code, duration, and output hash.
 - Treat network or schema failure as a failed run; do not silently fall back to checked-in `data/` snapshots.
-- Download the nflverse gzip asset without transforming it, verify gzip integrity, and hash the exact bytes. A local content-addressed download cache is allowed, but the exact file used must be copied or hard-linked into the run and identified by hash.
+- Download the nflverse gzip asset without transforming it, verify gzip integrity, and hash the exact bytes. Use a persistent local content-addressed cache by default so routine runs can reuse a verified snapshot without another download; the exact cached file used must be copied or hard-linked into the run and identified by hash. Provide an explicit refresh option for a new download.
 - A future explicit `--offline-input-dir` mode may use supplied snapshots, but the manifest must label the run offline and identify every input hash.
 
 ### 9.2 Collection validation
@@ -443,7 +443,7 @@ Historical validation must check:
 - seasons are complete, ordered, and within the configured range
 - regular-season totals independently reconcile to weekly sums
 - player/season/stat keys are unique
-- games and all seven target stats are nonnegative and finite
+- games and all seven target stats are finite; touchdowns and receptions are nonnegative, while passing, rushing, and receiving yardage may be signed because football totals can be negative
 - known schedule-length changes are represented correctly
 - lagged features contain no look-ahead leakage
 - player IDs, display names, positions, and teams have documented missingness rates
@@ -536,7 +536,7 @@ Kalshi contract prices are probabilities, not sportsbook odds with a two-way ove
 
 ### 9.7 Threshold semantics
 
-All supported NFL season totals are nonnegative integers. Convert each quote to the canonical event `P(X >= k)`:
+Market thresholds for the supported season totals are nonnegative integers. Historical passing, rushing, and receiving yardage totals may be signed and must remain auditable; do not silently clip or replace them. Convert each quote to the canonical event `P(X >= k)`:
 
 - sportsbook Over `L`: `k = floor(L) + 1`
 - Kalshi `N+`: `k = N`
@@ -558,7 +558,7 @@ The mean changes with the unknown spread. Therefore, never treat an O/U line as 
 
 #### MVP distribution
 
-Use a negative binomial distribution for every currently supported stat because the outcomes are nonnegative integer season totals and the family has an explicit mean with flexible overdispersion. Parameterize it by mean `mu` and dispersion `r`:
+Use a negative binomial distribution for market-supported nonnegative season totals because the family has an explicit mean with flexible overdispersion. Historical signed-yardage observations remain in the Phase 2 artifact. Before fitting a negative-binomial historical likelihood in Phase 6, exclude those observations from that likelihood with an explicit count and warning, or use a separately validated signed-support model; never silently clip them. Parameterize the negative-binomial component by mean `mu` and dispersion `r`:
 
 ```text
 E[X]   = mu
