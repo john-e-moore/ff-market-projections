@@ -90,6 +90,11 @@ def run_dag(tasks: Iterable[Task], *, max_workers: int = 4) -> dict[str, TaskRes
                 pending.remove(name)
             ready = sorted(name for name in pending if all(results[dependency].state == TaskState.SUCCEEDED for dependency in by_name[name].dependencies))
             if not ready:
+                if newly_blocked:
+                    # A dependency may have become blocked only in this pass.
+                    # Re-evaluate the remaining tasks so blocking propagates to
+                    # every descendant before declaring the DAG unrunnable.
+                    continue
                 if pending:
                     raise DagError("No runnable tasks remain")
                 break
