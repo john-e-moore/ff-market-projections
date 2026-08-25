@@ -1,0 +1,3 @@
+season,season_type,week,player_id,player_name,position,team,attempts,carries,targets,passing_yards,passing_tds,rushing_yards,rushing_tds,receiving_yards,receiving_tds,receptions
+2023,REG,1,00-0030000,Example Player,QB,EXM,30,2,0,250,2,10,0,0,0,0
+2024,REG,1,00-0030000,Example Player,QB,EXM,32,1,0,275,3,5,0,0,0,0

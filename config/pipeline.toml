@@ -1,0 +1,95 @@
+[run]
+season = "2026-27"
+timezone = "America/New_York"
+fail_on_warning = false
+max_snapshot_age_hours = 6
+max_cross_source_skew_minutes = 30
+
+[sources.draftkings]
+enabled = true
+weight = 1.0
+
+[sources.fanduel]
+enabled = true
+weight = 1.0
+state = "nj"
+
+[sources.kalshi]
+enabled = true
+weight = 1.0
+require_two_sided_quote = true
+max_spread_probability_points = 20.0
+min_open_interest_contracts = 0
+
+[historical]
+enabled = true
+source = "nflverse_player_stats_release"
+url = "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats.csv.gz"
+ingest_start_season = 1999
+calibration_start_season = 2011
+latest_completed_season = 2025
+season_type = "REG"
+prior_seasons = 3
+recency_half_life_seasons = 5.0
+minimum_training_seasons = 2
+holdout_seasons = 3
+minimum_player_seasons_per_stat = 200
+
+[historical.prior_opportunity_filters]
+passing_attempts = 100
+rushing_attempts = 25
+targets = 25
+
+[names]
+automatic_fuzzy_match = true
+minimum_score = 96.0
+minimum_runner_up_gap = 4.0
+
+[pricing]
+sportsbook_devig_method = "proportional"
+probability_tolerance = 1e-9
+reject_ambiguous_integer_lines = true
+
+[model]
+family = "negative_binomial"
+dispersion_mode = "historical_with_kalshi_update"
+minimum_calibration_groups = 8
+minimum_thresholds_per_group = 3
+probability_floor = 0.02
+probability_ceiling = 0.98
+robust_loss = "soft_l1"
+on_calibration_failure = "fail"
+bootstrap_samples = 500
+random_seed = 20260825
+
+[aggregation]
+minimum_sources = 1
+renormalize_available_source_weights = true
+
+[scoring]
+missing_stat_policy = "blank_total"
+passing_yards = 0.04
+passing_touchdowns = 4.0
+passing_interceptions = -2.0
+rushing_yards = 0.10
+rushing_touchdowns = 6.0
+receiving_yards = 0.10
+receiving_touchdowns = 6.0
+fumbles_lost = -2.0
+two_point_conversions = 2.0
+
+[scoring.reception_bonus]
+standard = 0.0
+half_ppr = 0.5
+three_quarter_ppr = 0.75
+full_ppr = 1.0
+
+[scoring.required_profiles]
+passing = ["passing_yards", "passing_touchdowns"]
+rushing = ["rushing_yards", "rushing_touchdowns"]
+receiving = ["receiving_yards", "receiving_touchdowns", "receptions"]
+
+[workbook]
+filename = "fantasy_football_projections.xlsx"
+freeze_header = true
+autofilter = true
