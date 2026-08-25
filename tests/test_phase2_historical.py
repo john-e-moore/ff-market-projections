@@ -44,7 +44,7 @@ def _configured_toml(*, minimum_cohort: int = 1) -> str:
         .replace('season = "2026-27"', 'season = "2023-24"')
         .replace("ingest_start_season = 1999", "ingest_start_season = 2019")
         .replace("calibration_start_season = 2011", "calibration_start_season = 2021")
-        .replace("latest_completed_season = 2025", "latest_completed_season = 2022")
+        .replace("latest_completed_season = 2024", "latest_completed_season = 2022")
         .replace("minimum_player_seasons_per_stat = 200", f"minimum_player_seasons_per_stat = {minimum_cohort}")
         .replace("passing_attempts = 100", "passing_attempts = 10")
         .replace("rushing_attempts = 25", "rushing_attempts = 5")
@@ -136,6 +136,44 @@ def test_independent_season_summary_mismatch_fails_reconciliation(tmp_path: Path
     frame.loc[(frame["season"] == 2021) & (frame["player_id"] == "00-QB"), "season_passing_yards"] = 999
     with pytest.raises(HistoricalDataError, match="do not reconcile"):
         prepare_historical_data(_write_frame(tmp_path, frame), _historical_config())
+
+
+def test_complementary_duplicate_week_rows_are_aggregated_but_exact_duplicates_fail(tmp_path: Path) -> None:
+    frame = pd.read_csv(FIXTURE)
+    duplicate = frame.loc[(frame["season"] == 2020) & (frame["player_id"] == "00-QB") & (frame["week"] == 1)].copy()
+    duplicate.loc[:, ["attempts", "carries", "targets", *["passing_yards", "passing_tds", "rushing_yards", "rushing_tds", "receiving_yards", "receiving_tds", "receptions"]]] = 0
+    combined = pd.concat([frame, duplicate], ignore_index=True)
+    prepared = prepare_historical_data(_write_frame(tmp_path, combined, "complementary.csv"), _historical_config())
+    weekly_check = next(check for check in prepared.validation["checks"] if check["name"] == "historical.weekly_keys_unique")
+    assert weekly_check["details"]["duplicate_groups_aggregated"] == 1
+    qb = prepared.player_seasons.query("season == 2020 and gsis_player_id == '00-QB' and stat == 'passing_yards'").iloc[0]
+    assert qb["stat_total"] == 520
+
+    exact = pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
+    with pytest.raises(HistoricalDataError, match="exact duplicate"):
+        prepare_historical_data(_write_frame(tmp_path, exact, "exact.csv"), _historical_config())
+
+
+def test_negative_weekly_yards_are_retained_but_negative_counting_stats_fail(tmp_path: Path) -> None:
+    frame = pd.read_csv(FIXTURE)
+    frame.loc[0, "passing_yards"] = -600
+    prepared = prepare_historical_data(_write_frame(tmp_path, frame, "negative_yards.csv"), _historical_config())
+    value = prepared.player_seasons.query("season == 2019 and gsis_player_id == '00-QB' and stat == 'passing_yards'").iloc[0]
+    assert value["stat_total"] == -340
+
+    frame.loc[0, "receptions"] = -1
+    with pytest.raises(HistoricalDataError, match="invalid negative counting values"):
+        prepare_historical_data(_write_frame(tmp_path, frame, "negative_counts.csv"), _historical_config())
+
+
+def test_one_extra_player_game_is_a_documented_trade_bye_warning(tmp_path: Path) -> None:
+    frame = pd.read_csv(FIXTURE)
+    player = frame.loc[(frame["season"] == 2019) & (frame["player_id"] == "00-QB")].iloc[[0]].copy()
+    extra = pd.concat([player.assign(week=week, attempts=0, carries=0, targets=0, passing_yards=0, passing_tds=0, rushing_yards=0, rushing_tds=0, receiving_yards=0, receiving_tds=0, receptions=0) for week in range(3, 18)], ignore_index=True)
+    prepared = prepare_historical_data(_write_frame(tmp_path, pd.concat([frame, extra], ignore_index=True), "trade_bye.csv"), _historical_config())
+    warning = next(check for check in prepared.validation["checks"] if check["name"] == "historical.player_schedule_exceptions")
+    assert warning["severity"] == "warning"
+    assert not warning["passed"]
 
 
 def test_inadequate_calibration_cohort_fails_closed() -> None:

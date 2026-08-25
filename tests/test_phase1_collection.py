@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import importlib.util
 import json
 import os
@@ -98,3 +99,26 @@ def test_offline_collection_creates_labeled_isolated_run(tmp_path: Path) -> None
         assert task["state"] == "succeeded"
         assert Path(task["output"]).is_file()
         assert Path(task["log"]).is_file()
+
+
+def test_nflverse_fetch_reuses_a_verified_content_addressed_cache(tmp_path: Path) -> None:
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    content_path = tmp_path / "fixture.csv.gz"
+    with gzip.open(content_path, "wb") as handle:
+        handle.write((ROOT / "tests/fixtures/nflverse_player_stats.csv").read_bytes())
+    content = content_path.read_bytes()
+    digest = hashlib.sha256(content).hexdigest()
+    (cache / f"{digest}.csv.gz").write_bytes(content)
+    url = "https://example.invalid/player_stats.csv.gz"
+    (cache / "index.json").write_text(json.dumps({"entries": {url: {"sha256": digest, "bytes": len(content), "response": {"etag": "fixture"}}}}))
+    output = tmp_path / "run/raw/nflverse_player_stats.csv.gz"
+    command = [
+        sys.executable, str(ROOT / "scripts/fetch_nflverse_player_history.py"),
+        "--url", url, "--cache-dir", str(cache), "--output", str(output),
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, env={**os.environ, "PYTHONPATH": str(ROOT / "src")}, check=True)
+    summary = json.loads(completed.stdout)
+    assert summary["cache"]["hit"] is True
+    assert summary["sha256"] == digest
+    assert output.read_bytes() == content

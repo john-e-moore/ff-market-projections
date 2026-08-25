@@ -52,6 +52,8 @@ _OPPORTUNITY_BY_STAT = {
     "receptions": "targets",
 }
 
+_SIGNED_YARDAGE_STATS = frozenset({"passing_yards", "rushing_yards", "receiving_yards"})
+
 _PLAUSIBLE_SEASON_MAX = {
     "passing_yards": 8_000,
     "passing_touchdowns": 100,
@@ -124,6 +126,15 @@ def _ordered_join(group: pd.DataFrame, column: str) -> str | None:
     return "|".join(values) if values else None
 
 
+def _ordered_join_values(values: pd.Series) -> str | None:
+    ordered: list[str] = []
+    for value in values:
+        text = _nonempty_text(value)
+        if text is not None and text not in ordered:
+            ordered.append(text)
+    return "|".join(ordered) if ordered else None
+
+
 def _finite_nonnegative(series: pd.Series) -> bool:
     values = series.dropna().to_numpy(dtype=float)
     return bool(np.isfinite(values).all() and (values >= 0).all())
@@ -194,23 +205,15 @@ def _canonical_weekly(raw: pd.DataFrame, historical_config: dict[str, Any]) -> t
         raise HistoricalDataError("historical.player_ids_present", "Historical input contains missing GSIS player IDs", {"missing_rows": int(ids.isna().sum())})
     weekly["gsis_player_id"] = ids
 
-    duplicate_key = ["season", "week", "gsis_player_id", "team"]
-    duplicates = weekly.duplicated(duplicate_key, keep=False)
-    if duplicates.any():
-        raise HistoricalDataError(
-            "historical.weekly_keys_unique",
-            "Historical input contains duplicate player-week-team rows",
-            {"duplicate_rows": int(duplicates.sum()), "key": duplicate_key},
-        )
-
     numeric = ["passing_attempts", "rushing_attempts", "targets", *TARGET_STATS]
     for column in numeric:
         weekly[column] = pd.to_numeric(weekly[column], errors="coerce")
     for stat in TARGET_STATS:
-        if weekly[stat].isna().any() or not _finite_nonnegative(weekly[stat]):
+        values = weekly[stat].dropna().to_numpy(dtype=float)
+        if weekly[stat].isna().any() or not np.isfinite(values).all() or (stat not in _SIGNED_YARDAGE_STATS and (values < 0).any()):
             raise HistoricalDataError(
                 "historical.target_values_valid",
-                f"{stat} contains missing, negative, or non-finite values",
+                f"{stat} contains missing, non-finite, or invalid negative counting values",
                 {"stat": stat, "missing_rows": int(weekly[stat].isna().sum())},
             )
     for opportunity in ("passing_attempts", "rushing_attempts", "targets"):
@@ -220,31 +223,71 @@ def _canonical_weekly(raw: pd.DataFrame, historical_config: dict[str, Any]) -> t
         if optional in weekly:
             weekly[optional] = pd.to_numeric(weekly[optional], errors="coerce")
 
+    duplicate_key = ["season", "week", "gsis_player_id", "team"]
+    duplicates = weekly.duplicated(duplicate_key, keep=False)
+    duplicate_groups = 0
+    if duplicates.any():
+        duplicate_groups = int(weekly.loc[duplicates].groupby(duplicate_key, dropna=False).ngroups)
+        identity_columns = ["player_name", "position"]
+        conflicting = []
+        exact_duplicate_groups = []
+        for key, group in weekly.loc[duplicates].groupby(duplicate_key, dropna=False, sort=False):
+            if group.drop(columns=["_source_index", *numeric, "age", "experience"], errors="ignore").drop_duplicates().shape[0] > 1:
+                if any(group[column].map(_nonempty_text).nunique(dropna=True) > 1 for column in identity_columns):
+                    conflicting.append(key)
+            if group.drop(columns=["_source_index"], errors="ignore").drop_duplicates().shape[0] == 1:
+                exact_duplicate_groups.append(key)
+        if conflicting:
+            raise HistoricalDataError(
+                "historical.weekly_keys_unique",
+                "Historical input contains duplicate player-week-team rows with conflicting identity fields",
+                {"duplicate_groups": len(conflicting), "key": duplicate_key, "sample": conflicting[:5]},
+            )
+        if exact_duplicate_groups:
+            raise HistoricalDataError(
+                "historical.weekly_keys_unique",
+                "Historical input contains exact duplicate player-week-team rows",
+                {"duplicate_groups": len(exact_duplicate_groups), "key": duplicate_key, "sample": exact_duplicate_groups[:5]},
+            )
+        # nflverse can split one weekly player record into complementary rows
+        # (for example, a passing row and an all-zero row). Sum numeric fields
+        # and retain the latest nonempty descriptive values for that source week.
+        grouped_rows: list[dict[str, Any]] = []
+        for key, group in weekly.loc[duplicates].groupby(duplicate_key, dropna=False, sort=False):
+            group = group.sort_values("_source_index")
+            row = dict(zip(duplicate_key, key if isinstance(key, tuple) else (key,)))
+            row["_source_index"] = int(group["_source_index"].iloc[0])
+            row["season_type"] = str(group["season_type"].iloc[-1])
+            for column in numeric:
+                row[column] = float(group[column].sum(min_count=1)) if group[column].notna().any() else np.nan
+            for column in ("player_name", "position", "age", "experience"):
+                if column in group:
+                    values = group[column].dropna()
+                    row[column] = values.iloc[-1] if not values.empty else np.nan
+            grouped_rows.append(row)
+        nonduplicates = weekly.loc[~duplicates].to_dict(orient="records")
+        weekly = pd.DataFrame.from_records(nonduplicates + grouped_rows)
+        weekly.attrs["duplicate_week_groups_aggregated"] = duplicate_groups
+
     return weekly.sort_values(["season", "gsis_player_id", "week", "team"], na_position="last").reset_index(drop=True), resolved
 
 
 def _aggregate_player_seasons(weekly: pd.DataFrame) -> pd.DataFrame:
-    records: list[dict[str, Any]] = []
-    for (season, player_id), group in weekly.groupby(["season", "gsis_player_id"], sort=True, dropna=False):
-        group = group.sort_values(["week", "team"], na_position="last")
-        record: dict[str, Any] = {
-            "season": int(season),
-            "gsis_player_id": str(player_id),
-            "player_name": _latest_text(group, "player_name"),
-            "team": _ordered_join(group, "team"),
-            "position": _latest_text(group, "position"),
-            "games": int(group["week"].nunique()),
-            "schedule_games": scheduled_games(int(season)),
-            "source_week_rows": int(len(group)),
-        }
-        for opportunity in ("passing_attempts", "rushing_attempts", "targets"):
-            record[opportunity] = float(group[opportunity].sum(min_count=1)) if group[opportunity].notna().any() else np.nan
-        for stat in TARGET_STATS:
-            record[stat] = float(group[stat].sum())
-        for optional in ("age", "experience"):
-            record[optional] = float(group[optional].dropna().iloc[-1]) if optional in group and group[optional].notna().any() else np.nan
-        records.append(record)
-    return pd.DataFrame.from_records(records).sort_values(["season", "gsis_player_id"]).reset_index(drop=True)
+    keys = ["season", "gsis_player_id"]
+    grouped = weekly.groupby(keys, sort=True, dropna=False)
+    numeric = ["passing_attempts", "rushing_attempts", "targets", *TARGET_STATS]
+    seasons = grouped[numeric].sum(min_count=1)
+    seasons["games"] = grouped["week"].nunique()
+    seasons["source_week_rows"] = grouped.size()
+    seasons["team"] = grouped["team"].agg(_ordered_join_values)
+    for column in ("player_name", "position", "age", "experience"):
+        if column in weekly:
+            seasons[column] = grouped[column].last()
+        else:
+            seasons[column] = np.nan
+    seasons = seasons.reset_index()
+    seasons["schedule_games"] = seasons["season"].map(scheduled_games)
+    return seasons.sort_values(keys).reset_index(drop=True)
 
 
 def _reconcile_weekly(weekly: pd.DataFrame, seasons: pd.DataFrame) -> None:
@@ -321,6 +364,33 @@ def _weighted_mean(values: list[float], weights: list[float]) -> float | None:
     return float(np.average(np.asarray(values, dtype=float), weights=np.asarray(weights, dtype=float)))
 
 
+def _precompute_cohorts(seasons: pd.DataFrame, historical_config: dict[str, Any]) -> dict[tuple[int, str, str], tuple[float | None, int, list[int]]]:
+    """Compute leakage-free cohort summaries once per target season/position/stat."""
+
+    start = int(historical_config["calibration_start_season"])
+    latest = int(historical_config["latest_completed_season"])
+    prior_seasons = int(historical_config["prior_seasons"])
+    half_life = float(historical_config["recency_half_life_seasons"])
+    cohorts: dict[tuple[int, str, str], tuple[float | None, int, list[int]]] = {}
+    positions = sorted({_nonempty_text(value) for value in seasons["position"] if _nonempty_text(value) is not None})
+    for target_season in range(start, latest + 1):
+        window = seasons.loc[(seasons["season"] < target_season) & (seasons["season"] >= target_season - prior_seasons)]
+        for position in positions:
+            position_rows = window.loc[window["position"].map(_nonempty_text) == position]
+            for stat in TARGET_STATS:
+                opportunity_name = _OPPORTUNITY_BY_STAT[stat]
+                minimum_opportunity = _minimum_opportunity(stat, historical_config)
+                eligible = position_rows.loc[position_rows[opportunity_name].notna() & (position_rows[opportunity_name] >= minimum_opportunity)]
+                values = (eligible[stat] * 17.0 / eligible["schedule_games"]).astype(float).tolist()
+                weights = (0.5 ** ((target_season - eligible["season"] - 1) / half_life)).astype(float).tolist()
+                cohorts[(target_season, position, stat)] = (
+                    _weighted_mean(values, weights),
+                    len(values),
+                    sorted(int(value) for value in eligible["season"].unique()),
+                )
+    return cohorts
+
+
 def _backtest_predictions(seasons: pd.DataFrame, historical_config: dict[str, Any]) -> pd.DataFrame:
     start = int(historical_config["calibration_start_season"])
     latest = int(historical_config["latest_completed_season"])
@@ -328,6 +398,7 @@ def _backtest_predictions(seasons: pd.DataFrame, historical_config: dict[str, An
     minimum_history = int(historical_config["minimum_training_seasons"])
     half_life = float(historical_config["recency_half_life_seasons"])
     lookup = {(int(row.season), str(row.gsis_player_id)): row for row in seasons.itertuples(index=False)}
+    cohorts = _precompute_cohorts(seasons, historical_config)
     rows: list[dict[str, Any]] = []
 
     for target in seasons.loc[seasons["season"].between(start, latest)].itertuples(index=False):
@@ -377,26 +448,11 @@ def _backtest_predictions(seasons: pd.DataFrame, historical_config: dict[str, An
                     history_seasons.append(int(prior.season))
 
             position = _nonempty_text(target.position)
-            cohort_values: list[float] = []
-            cohort_weights: list[float] = []
-            cohort_seasons: list[int] = []
-            if position is not None:
-                candidates = seasons.loc[
-                    (seasons["position"].map(_nonempty_text) == position)
-                    & (seasons["season"] < target_season)
-                    & (seasons["season"] >= target_season - prior_seasons)
-                ]
-                for candidate in candidates.itertuples(index=False):
-                    opportunity = getattr(candidate, opportunity_name)
-                    if pd.isna(opportunity) or float(opportunity) < minimum_opportunity:
-                        continue
-                    gap = target_season - int(candidate.season)
-                    cohort_values.append(float(getattr(candidate, stat)) * 17.0 / float(candidate.schedule_games))
-                    cohort_weights.append(0.5 ** ((gap - 1) / half_life))
-                    cohort_seasons.append(int(candidate.season))
+            cohort_component_17, cohort_count, cohort_seasons = cohorts.get(
+                (target_season, position, stat), (None, 0, [])
+            ) if position is not None else (None, 0, [])
 
             player_component_17 = _weighted_mean(player_values, player_weights)
-            cohort_component_17 = _weighted_mean(cohort_values, cohort_weights)
             history_count = len(player_values)
             player_weight = history_count / (history_count + minimum_history) if history_count and cohort_component_17 is not None else (1.0 if history_count else 0.0)
             if player_component_17 is not None and cohort_component_17 is not None:
@@ -430,7 +486,7 @@ def _backtest_predictions(seasons: pd.DataFrame, historical_config: dict[str, An
                 "player_history_seasons": history_count,
                 "player_component_per_17": player_component_17,
                 "cohort_component_per_17": cohort_component_17,
-                "cohort_player_seasons": len(cohort_values),
+                "cohort_player_seasons": cohort_count,
                 "player_shrinkage_weight": player_weight,
                 "baseline_mean": baseline,
                 "baseline_available": baseline is not None,
@@ -455,6 +511,13 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
     _reconcile_optional_summaries(raw, weekly, resolved, seasons)
 
     for stat, maximum in _PLAUSIBLE_SEASON_MAX.items():
+        negative = seasons[stat] < 0
+        if stat not in _SIGNED_YARDAGE_STATS and negative.any():
+            raise HistoricalDataError(
+                "historical.target_totals_nonnegative",
+                f"Historical player-season {stat} contains negative totals",
+                {"stat": stat, "rows": int(negative.sum()), "minimum": float(seasons.loc[negative, stat].min())},
+            )
         bad = seasons[stat] > maximum
         if bad.any():
             raise HistoricalDataError(
@@ -462,9 +525,14 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
                 f"Historical player-season {stat} exceeds the plausibility limit {maximum}",
                 {"stat": stat, "limit": maximum, "rows": int(bad.sum())},
             )
-    bad_games = seasons["games"] > seasons["schedule_games"]
-    if bad_games.any():
-        raise HistoricalDataError("historical.schedule_lengths", "Player games exceed the known regular-season schedule length", {"rows": int(bad_games.sum())})
+    schedule_exceptions = seasons["games"] > seasons["schedule_games"]
+    impossible_games = seasons["games"] > seasons["schedule_games"] + 1
+    if impossible_games.any():
+        raise HistoricalDataError(
+            "historical.schedule_lengths",
+            "Player games exceed the known regular-season schedule length by more than one game",
+            {"rows": int(impossible_games.sum()), "maximum_games": int(seasons.loc[impossible_games, "games"].max())},
+        )
 
     player_seasons = _long_player_seasons(seasons)
     duplicate_output = player_seasons.duplicated(["season", "gsis_player_id", "team", "stat"], keep=False)
@@ -479,10 +547,10 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
     checks = [
         CheckResult("historical.seasons_complete", True, details={"first": int(seasons["season"].min()), "last": int(seasons["season"].max()), "count": int(seasons["season"].nunique())}),
         CheckResult("historical.regular_season_only", True, details={"season_type": historical_config["season_type"]}),
-        CheckResult("historical.weekly_keys_unique", True, details={"rows": int(len(weekly))}),
+        CheckResult("historical.weekly_keys_unique", True, details={"rows": int(len(weekly)), "duplicate_groups_aggregated": int(weekly.attrs.get("duplicate_week_groups_aggregated", 0))}),
         CheckResult("historical.weekly_to_season_reconciled", True, details={"player_seasons": int(len(seasons)), "stats": len(TARGET_STATS)}),
         CheckResult("historical.output_keys_unique", True, details={"rows": int(len(player_seasons)), "key": ["season", "gsis_player_id", "team", "stat"]}),
-        CheckResult("historical.schedule_lengths", True, details={"sixteen_game_seasons": int((seasons["schedule_games"] == 16).sum()), "seventeen_game_seasons": int((seasons["schedule_games"] == 17).sum())}),
+        CheckResult("historical.schedule_lengths", True, details={"sixteen_game_seasons": int((seasons["schedule_games"] == 16).sum()), "seventeen_game_seasons": int((seasons["schedule_games"] == 17).sum()), "player_schedule_exceptions": int(schedule_exceptions.sum())}),
         CheckResult("historical.no_lookahead", True, details={"baselines": int(len(predictions))}),
     ]
     missingness_rates = {
@@ -497,6 +565,14 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
             "warning",
             f"{column} missingness rate is {rate:.2%}",
             {"field": column, "missingness_rate": rate},
+        ))
+    if schedule_exceptions.any():
+        checks.append(CheckResult(
+            "historical.player_schedule_exceptions",
+            False,
+            "warning",
+            "Player-season games exceed a single-team schedule by one; likely traded across bye weeks",
+            {"rows": int(schedule_exceptions.sum()), "maximum_games": int(seasons.loc[schedule_exceptions, "games"].max())},
         ))
     minimum = int(historical_config["minimum_player_seasons_per_stat"])
     cohort_counts: dict[str, int] = {}
@@ -525,6 +601,7 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
         "minimum_training_seasons": int(historical_config["minimum_training_seasons"]),
         "prior_opportunity_filters": dict(historical_config["prior_opportunity_filters"]),
         "opportunity_by_stat": dict(_OPPORTUNITY_BY_STAT),
+        "signed_yardage_stats": sorted(_SIGNED_YARDAGE_STATS),
         "cohort_counts": cohort_counts,
         "missingness_rates": missingness_rates,
         "team_representation": "pipe-delimited ordered teams observed across the player season",
