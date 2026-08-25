@@ -46,3 +46,21 @@ Offline runs are identified as `offline_fixture` in `metadata/manifest.json`. A
 collection failure marks the run failed while retaining its collector logs and any
 successfully collected raw inputs. A successful Phase 1 collection remains `running`:
 later phases are responsible for validation, workbook production, and final completion.
+
+## Phase 2 historical preparation
+
+Prepare the run-scoped nflverse snapshot after collection:
+
+```bash
+python scripts/prepare_historical_stats.py \
+  --run-dir runs/RUN_ID \
+  --config runs/RUN_ID/config/effective.toml \
+  --input runs/RUN_ID/raw/nflverse_player_stats.csv.gz
+```
+
+The command atomically writes `historical_player_seasons.csv`,
+`historical_backtest_predictions.csv`, and `historical_validation.json` under the
+run's `artifacts/` directory. It fails closed for incomplete seasons, reconciliation
+errors, implausible totals, insufficient calibration cohorts, or any look-ahead
+feature. Baseline eligibility uses prior-season opportunity only; missing opportunity
+is preserved as missing and never converted to zero.
