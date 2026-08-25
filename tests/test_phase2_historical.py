@@ -146,6 +146,8 @@ def test_complementary_duplicate_week_rows_are_aggregated_but_exact_duplicates_f
     prepared = prepare_historical_data(_write_frame(tmp_path, combined, "complementary.csv"), _historical_config())
     weekly_check = next(check for check in prepared.validation["checks"] if check["name"] == "historical.weekly_keys_unique")
     assert weekly_check["details"]["duplicate_groups_aggregated"] == 1
+    qb = prepared.player_seasons.query("season == 2020 and gsis_player_id == '00-QB' and stat == 'passing_yards'").iloc[0]
+    assert qb["stat_total"] == 520
 
     exact = pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
     with pytest.raises(HistoricalDataError, match="exact duplicate"):

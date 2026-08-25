@@ -253,7 +253,7 @@ def _canonical_weekly(raw: pd.DataFrame, historical_config: dict[str, Any]) -> t
         # (for example, a passing row and an all-zero row). Sum numeric fields
         # and retain the latest nonempty descriptive values for that source week.
         grouped_rows: list[dict[str, Any]] = []
-        for key, group in weekly.groupby(duplicate_key, dropna=False, sort=False):
+        for key, group in weekly.loc[duplicates].groupby(duplicate_key, dropna=False, sort=False):
             group = group.sort_values("_source_index")
             row = dict(zip(duplicate_key, key if isinstance(key, tuple) else (key,)))
             row["_source_index"] = int(group["_source_index"].iloc[0])
