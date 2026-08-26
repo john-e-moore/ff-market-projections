@@ -277,6 +277,38 @@ def _validate(values: dict[str, Any]) -> None:
     for key in ("max_absolute_disagreement", "max_relative_disagreement"):
         _positive(aggregation[key], f"aggregation.{key}", allow_zero=True)
 
+    scoring = values["scoring"]
+    if scoring.get("missing_stat_policy") not in {"blank_total", "partial_total"}:
+        raise ConfigError("scoring.missing_stat_policy must be blank_total or partial_total")
+    scoring_stats = {
+        "passing_yards", "passing_touchdowns", "passing_interceptions",
+        "rushing_yards", "rushing_touchdowns", "receiving_yards",
+        "receiving_touchdowns", "fumbles_lost", "two_point_conversions",
+    }
+    for stat in scoring_stats:
+        value = _expect(scoring, stat, "scoring")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ConfigError(f"scoring.{stat} must be numeric")
+    reception_bonus = _expect(scoring, "reception_bonus", "scoring")
+    if not isinstance(reception_bonus, dict):
+        raise ConfigError("scoring.reception_bonus must be a TOML table")
+    _assert_keys(reception_bonus, {"standard", "half_ppr", "three_quarter_ppr", "full_ppr"}, "scoring.reception_bonus")
+    for mode in ("standard", "half_ppr", "three_quarter_ppr", "full_ppr"):
+        value = _expect(reception_bonus, mode, "scoring.reception_bonus")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            raise ConfigError(f"scoring.reception_bonus.{mode} must be non-negative numeric")
+    if reception_bonus != {"standard": 0.0, "half_ppr": 0.5, "three_quarter_ppr": 0.75, "full_ppr": 1.0}:
+        raise ConfigError("scoring.reception_bonus must define the standard, half_ppr, three_quarter_ppr, and full_ppr modes")
+    profiles = _expect(scoring, "required_profiles", "scoring")
+    if not isinstance(profiles, dict) or not profiles:
+        raise ConfigError("scoring.required_profiles must be a non-empty TOML table")
+    allowed_profile_stats = scoring_stats | {"receptions"}
+    for profile, components in profiles.items():
+        if not isinstance(profile, str) or not profile or not isinstance(components, list) or not components:
+            raise ConfigError("scoring.required_profiles entries must be non-empty lists")
+        if len(components) != len(set(components)) or any(component not in allowed_profile_stats for component in components):
+            raise ConfigError(f"scoring.required_profiles.{profile} contains duplicate or unsupported components")
+
 
 def load_config(path: str | Path) -> PipelineConfig:
     """Load TOML, rejecting malformed, duplicate, unknown, and invalid settings."""
