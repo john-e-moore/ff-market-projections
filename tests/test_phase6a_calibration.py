@@ -62,7 +62,15 @@ def _synthetic_predictions(*, seed: int = 219, players: int = 45) -> pd.DataFram
                     "realized_total": realized,
                     "target_games": int(rng.integers(8, 18)),
                     "target_schedule_games": 17,
+                    "baseline_mean_raw": mean,
                     "baseline_mean": mean,
+                    "baseline_bias_method": "synthetic_fixed_mean",
+                    "baseline_bias_intercept": 0.0,
+                    "baseline_bias_exponent": 1.0,
+                    "baseline_bias_recency_half_life_seasons": np.nan,
+                    "baseline_bias_max_observation_season": np.nan,
+                    "baseline_bias_optimizer_converged": False,
+                    "baseline_bias_bound_hit": False,
                     "training_eligible": True,
                     "feature_seasons": str(season - 1),
                     "max_feature_season": season - 1,
@@ -165,6 +173,19 @@ def test_negative_yardage_is_explicitly_excluded_without_clipping() -> None:
 
 def test_future_feature_lineage_fails_before_fitting() -> None:
     predictions = _synthetic_predictions(players=10)
+    predictions.loc[0, "feature_seasons"] = str(predictions.loc[0, "target_season"])
+    predictions.loc[0, "max_feature_season"] = predictions.loc[0, "target_season"]
+    historical, model = _configs()
+    with pytest.raises(CalibrationError, match="target or a future season"):
+        calibrate_historical_distributions(predictions, historical, model)
+
+
+def test_future_bias_correction_lineage_fails_before_fitting() -> None:
+    predictions = _synthetic_predictions(players=10)
+    predictions.loc[0, "baseline_bias_method"] = "rolling_power_poisson"
+    predictions.loc[0, "baseline_bias_optimizer_converged"] = True
+    predictions.loc[0, "baseline_bias_recency_half_life_seasons"] = 5.0
+    predictions.loc[0, "baseline_bias_max_observation_season"] = predictions.loc[0, "target_season"]
     predictions.loc[0, "feature_seasons"] = str(predictions.loc[0, "target_season"])
     predictions.loc[0, "max_feature_season"] = predictions.loc[0, "target_season"]
     historical, model = _configs()

@@ -20,7 +20,7 @@ _SCHEMA: dict[str, Any] = {
         "kalshi": {"enabled", "weight", "require_two_sided_quote", "max_spread_probability_points", "min_open_interest_contracts"},
     },
     "historical": {
-        "enabled", "source", "url", "ingest_start_season", "calibration_start_season", "latest_completed_season", "season_type", "prior_seasons", "recency_half_life_seasons", "minimum_training_seasons", "holdout_seasons", "minimum_player_seasons_per_stat", "prior_opportunity_filters",
+        "enabled", "source", "url", "ingest_start_season", "calibration_start_season", "latest_completed_season", "season_type", "prior_seasons", "recency_half_life_seasons", "minimum_training_seasons", "holdout_seasons", "minimum_player_seasons_per_stat", "prior_opportunity_filters", "baseline_bias_correction",
     },
     "names": {"automatic_fuzzy_match", "minimum_score", "minimum_runner_up_gap"},
     "pricing": {"sportsbook_devig_method", "probability_tolerance", "reject_ambiguous_integer_lines"},
@@ -46,6 +46,10 @@ _HISTORICAL_CALIBRATION_KEYS = {
     "max_interval_coverage_error", "max_abs_relative_bias",
     "max_sensitivity_log_dispersion_delta", "minimum_bootstrap_success_rate",
     "dispersion_bounds",
+}
+_BASELINE_BIAS_CORRECTION_KEYS = {
+    "method", "minimum_seasons", "exponent_bounds",
+    "recency_half_life_candidates", "minimum_validation_seasons",
 }
 _CURRENT_MARKET_KEYS = {
     "optimizer_tolerance", "optimizer_max_evaluations",
@@ -144,6 +148,40 @@ def _validate(values: dict[str, Any]) -> None:
     _assert_keys(filters, {"passing_attempts", "rushing_attempts", "targets"}, "historical.prior_opportunity_filters")
     for key in ("passing_attempts", "rushing_attempts", "targets"):
         _positive(_expect(filters, key, "historical.prior_opportunity_filters"), f"historical.prior_opportunity_filters.{key}", allow_zero=True)
+    bias_correction = historical["baseline_bias_correction"]
+    if not isinstance(bias_correction, dict):
+        raise ConfigError("historical.baseline_bias_correction must be a TOML table")
+    _assert_keys(bias_correction, _BASELINE_BIAS_CORRECTION_KEYS, "historical.baseline_bias_correction")
+    for key in _BASELINE_BIAS_CORRECTION_KEYS:
+        _expect(bias_correction, key, "historical.baseline_bias_correction")
+    if bias_correction["method"] != "rolling_power_poisson":
+        raise ConfigError("historical.baseline_bias_correction.method must be rolling_power_poisson")
+    minimum_bias_seasons = bias_correction["minimum_seasons"]
+    if isinstance(minimum_bias_seasons, bool) or not isinstance(minimum_bias_seasons, int) or minimum_bias_seasons < 2:
+        raise ConfigError("historical.baseline_bias_correction.minimum_seasons must be an integer of at least two")
+    minimum_validation_seasons = bias_correction["minimum_validation_seasons"]
+    if (
+        isinstance(minimum_validation_seasons, bool)
+        or not isinstance(minimum_validation_seasons, int)
+        or minimum_validation_seasons < 1
+    ):
+        raise ConfigError("historical.baseline_bias_correction.minimum_validation_seasons must be a positive integer")
+    exponent_bounds = bias_correction["exponent_bounds"]
+    if (
+        not isinstance(exponent_bounds, list) or len(exponent_bounds) != 2
+        or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in exponent_bounds)
+        or not 0 < exponent_bounds[0] < exponent_bounds[1]
+    ):
+        raise ConfigError("historical.baseline_bias_correction.exponent_bounds must be [positive_min, larger_max]")
+    half_life_candidates = bias_correction["recency_half_life_candidates"]
+    if (
+        not isinstance(half_life_candidates, list) or not half_life_candidates
+        or any(isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0 for value in half_life_candidates)
+        or half_life_candidates != sorted(set(half_life_candidates))
+    ):
+        raise ConfigError(
+            "historical.baseline_bias_correction.recency_half_life_candidates must be unique increasing positive numbers"
+        )
 
     pricing = values["pricing"]
     if pricing.get("sportsbook_devig_method") != "proportional":

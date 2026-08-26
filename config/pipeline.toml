@@ -40,6 +40,13 @@ passing_attempts = 100
 rushing_attempts = 25
 targets = 25
 
+[historical.baseline_bias_correction]
+method = "rolling_power_poisson"
+minimum_seasons = 3
+exponent_bounds = [0.25, 3.0]
+recency_half_life_candidates = [1.0, 3.0, 5.0, 10.0]
+minimum_validation_seasons = 3
+
 [names]
 automatic_fuzzy_match = true
 minimum_score = 96.0

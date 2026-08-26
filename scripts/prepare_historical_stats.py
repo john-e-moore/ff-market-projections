@@ -69,6 +69,7 @@ def _mark_succeeded(run_dir: Path, started_utc: str, elapsed: float, validation:
         "calibration_window": validation["calibration_window"],
         "cohort_counts": validation["cohort_counts"],
         "prior_opportunity_filters": validation["prior_opportunity_filters"],
+        "baseline_bias_correction": validation["baseline_bias_correction"],
     }
     manifest["historical_state"] = "succeeded"
     atomic_write_json(manifest_path, manifest)

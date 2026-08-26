@@ -16,11 +16,15 @@ from .distributions import negative_binomial_interval, negative_binomial_logpmf,
 from .historical import TARGET_STATS
 
 
-CALIBRATION_VERSION = "negative_binomial_historical_v1"
+CALIBRATION_VERSION = "negative_binomial_historical_v2"
 _REQUIRED_COLUMNS = {
     "target_season", "gsis_player_id", "position", "stat", "realized_total",
     "target_games", "baseline_mean", "training_eligible", "feature_seasons",
-    "max_feature_season",
+    "max_feature_season", "baseline_mean_raw", "baseline_bias_method",
+    "baseline_bias_intercept", "baseline_bias_exponent",
+    "baseline_bias_recency_half_life_seasons",
+    "baseline_bias_max_observation_season", "baseline_bias_optimizer_converged",
+    "baseline_bias_bound_hit",
 }
 
 
@@ -199,12 +203,12 @@ def grouped_bootstrap_log_dispersion(
     }
 
 
-def _boolean_series(series: pd.Series) -> pd.Series:
+def _boolean_series(series: pd.Series, name: str) -> pd.Series:
     if pd.api.types.is_bool_dtype(series):
         return series.astype(bool)
     mapped = series.astype("string").str.strip().str.lower().map({"true": True, "false": False})
     if mapped.isna().any():
-        raise CalibrationError("historical_calibration.input_types", "training_eligible must contain only true/false values")
+        raise CalibrationError("historical_calibration.input_types", f"{name} must contain only true/false values")
     return mapped.astype(bool)
 
 
@@ -213,11 +217,22 @@ def _validate_predictions(frame: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise CalibrationError("historical_calibration.required_columns", f"Historical backtest predictions are missing columns: {', '.join(missing)}")
     result = frame.copy()
-    for column in ("target_season", "realized_total", "target_games", "baseline_mean", "max_feature_season"):
+    for column in (
+        "target_season", "realized_total", "target_games", "baseline_mean", "baseline_mean_raw",
+        "baseline_bias_intercept", "baseline_bias_exponent",
+        "baseline_bias_recency_half_life_seasons",
+        "baseline_bias_max_observation_season", "max_feature_season",
+    ):
         result[column] = pd.to_numeric(result[column], errors="coerce")
     if result[["target_season", "realized_total", "target_games"]].isna().any(axis=None):
         raise CalibrationError("historical_calibration.input_types", "Target seasons, outcomes, and games must be numeric and present")
-    result["training_eligible"] = _boolean_series(result["training_eligible"])
+    result["training_eligible"] = _boolean_series(result["training_eligible"], "training_eligible")
+    result["baseline_bias_optimizer_converged"] = _boolean_series(
+        result["baseline_bias_optimizer_converged"], "baseline_bias_optimizer_converged"
+    )
+    result["baseline_bias_bound_hit"] = _boolean_series(
+        result["baseline_bias_bound_hit"], "baseline_bias_bound_hit"
+    )
     unknown_stats = sorted(set(result["stat"].dropna().astype(str)) - set(TARGET_STATS))
     if unknown_stats:
         raise CalibrationError("historical_calibration.supported_stats", f"Unsupported historical stat(s): {', '.join(unknown_stats)}")
@@ -239,6 +254,8 @@ def _validate_predictions(frame: pd.DataFrame) -> pd.DataFrame:
         for column in ("lag_1_season", "lag_2_season", "lag_3_season"):
             if column in result.columns and not pd.isna(row[column]):
                 feature_values.append(int(float(row[column])))
+        if not pd.isna(row["baseline_bias_max_observation_season"]):
+            feature_values.append(int(float(row["baseline_bias_max_observation_season"])))
         if any(value >= target for value in feature_values):
             leakage_rows.append(int(index))
         declared = row["max_feature_season"]
@@ -250,6 +267,29 @@ def _validate_predictions(frame: pd.DataFrame) -> pd.DataFrame:
         raise CalibrationError("historical_calibration.no_lookahead", "A baseline uses its target or a future season", {"rows": len(leakage_rows), "sample_indices": leakage_rows[:10]})
     if lineage_mismatches:
         raise CalibrationError("historical_calibration.feature_lineage", "max_feature_season does not reconcile to recorded feature seasons", {"rows": len(lineage_mismatches), "sample_indices": lineage_mismatches[:10]})
+    fitted_bias = result["baseline_bias_method"] == "rolling_power_poisson"
+    invalid_bias = fitted_bias & (
+        result["baseline_mean_raw"].isna()
+        | ~np.isfinite(result["baseline_mean_raw"])
+        | (result["baseline_mean_raw"] < 0)
+        | result["baseline_bias_intercept"].isna()
+        | ~np.isfinite(result["baseline_bias_intercept"])
+        | result["baseline_bias_exponent"].isna()
+        | ~np.isfinite(result["baseline_bias_exponent"])
+        | (result["baseline_bias_exponent"] <= 0)
+        | result["baseline_bias_recency_half_life_seasons"].isna()
+        | ~np.isfinite(result["baseline_bias_recency_half_life_seasons"])
+        | (result["baseline_bias_recency_half_life_seasons"] <= 0)
+        | ~result["baseline_bias_optimizer_converged"]
+        | result["baseline_bias_bound_hit"]
+        | result["baseline_bias_max_observation_season"].isna()
+    )
+    if invalid_bias.any():
+        raise CalibrationError(
+            "historical_calibration.baseline_bias_correction",
+            "Fitted baseline bias corrections must have finite positive inputs and converged interior parameters",
+            {"rows": int(invalid_bias.sum())},
+        )
     return result
 
 
@@ -271,7 +311,9 @@ def _simple_group_metrics(frame: pd.DataFrame, dispersion: float) -> dict[str, A
 def _holdout_metrics(frame: pd.DataFrame, dispersion: float, calibration_config: dict[str, Any]) -> dict[str, Any]:
     realized = frame["realized_total"].to_numpy(dtype=float)
     means = frame["baseline_mean"].to_numpy(dtype=float)
+    raw_means = frame["baseline_mean_raw"].to_numpy(dtype=float)
     errors = realized - means
+    raw_errors = realized - raw_means
     model_logpmf = negative_binomial_logpmf(realized, means, dispersion)
     poisson_logpmf = poisson.logpmf(np.rint(realized), means)
 
@@ -334,6 +376,9 @@ def _holdout_metrics(frame: pd.DataFrame, dispersion: float, calibration_config:
         "bias": float(np.mean(errors)),
         "mean_absolute_error": float(np.mean(np.abs(errors))),
         "relative_bias": float(np.sum(errors) / np.sum(means)),
+        "raw_baseline_bias": float(np.mean(raw_errors)),
+        "raw_baseline_mean_absolute_error": float(np.mean(np.abs(raw_errors))),
+        "raw_baseline_relative_bias": float(np.sum(raw_errors) / np.sum(raw_means)),
         "brier_events": brier_events,
         "predictive_interval_coverage": coverage,
         "mean_calibration_bins": mean_bins,
@@ -369,6 +414,31 @@ def calibrate_historical_distributions(
             details={"training_seasons": training_seasons, "holdout_seasons": holdout_seasons},
         ),
     ]
+    holdout_bias_rows = frame.loc[
+        (frame["target_season"] >= holdout_start)
+        & (frame["baseline_bias_method"] == "rolling_power_poisson")
+    ]
+    holdout_bias_frozen = bool(
+        holdout_bias_rows.empty
+        or (
+            (holdout_bias_rows["baseline_bias_max_observation_season"] <= holdout_start - 1).all()
+            and holdout_bias_rows.groupby("stat")[[
+                "baseline_bias_intercept", "baseline_bias_exponent",
+                "baseline_bias_recency_half_life_seasons",
+            ]]
+            .nunique(dropna=False)
+            .le(1)
+            .to_numpy()
+            .all()
+        )
+    )
+    _check(
+        checks,
+        "historical_calibration.holdout_mean_correction_frozen",
+        holdout_bias_frozen,
+        "Baseline mean-correction parameters are fitted before and frozen across the holdout",
+        {"holdout_start": holdout_start, "maximum_observation_season": holdout_start - 1},
+    )
     stat_reports: dict[str, Any] = {}
     dispersion_rows: list[dict[str, Any]] = []
     minimum_training = int(historical_config["minimum_player_seasons_per_stat"])
@@ -512,6 +582,7 @@ def calibrate_historical_distributions(
                 "holdout_nll_per_player_season": holdout_metrics.get("negative_log_likelihood_per_player_season"),
                 "holdout_poisson_nll_per_player_season": holdout_metrics.get("poisson_negative_log_likelihood_per_player_season"),
                 "holdout_relative_bias": holdout_metrics.get("relative_bias"),
+                "holdout_raw_baseline_relative_bias": holdout_metrics.get("raw_baseline_relative_bias"),
                 "status": stat_report["status"],
             })
 
@@ -528,6 +599,18 @@ def calibrate_historical_distributions(
         "holdout_seasons": holdout_seasons,
         "recency_half_life_seasons": half_life,
         "opportunity_filters": dict(historical_config["prior_opportunity_filters"]),
+        "baseline_bias_correction": {
+            **dict(historical_config["baseline_bias_correction"]),
+            "holdout_parameters": {
+                stat: {
+                    "intercept": float(group["baseline_bias_intercept"].iloc[0]),
+                    "exponent": float(group["baseline_bias_exponent"].iloc[0]),
+                    "recency_half_life_seasons": float(group["baseline_bias_recency_half_life_seasons"].iloc[0]),
+                    "max_observation_season": int(group["baseline_bias_max_observation_season"].iloc[0]),
+                }
+                for stat, group in holdout_bias_rows.groupby("stat", sort=True)
+            },
+        },
         "bootstrap": {
             "samples": int(model_config["bootstrap_samples"]),
             "seed": base_seed,
