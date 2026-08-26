@@ -96,6 +96,40 @@ Phase 6A is historical-only: it does not update dispersion from Kalshi, invert m
 probabilities into means, or write `source_projections.csv`; those behaviors belong to
 Phase 6B after separate review.
 
+## Phase 6B Kalshi update and source mean estimation
+
+After Phase 6A calibration and Phase 5 pricing both succeed, run:
+
+```bash
+python scripts/estimate_means.py --run-dir runs/RUN_ID
+```
+
+The command reads only the run-scoped effective config, `priced_markets.csv`,
+`dispersion_calibration.csv`, and `historical_calibration.json`. For each stat with at
+least the configured number of eligible multi-threshold Kalshi player curves, it fits a
+Kalshi-only shared dispersion and an empirical-Bayes/MAP dispersion using the Phase 6A
+bootstrap variance as the historical prior. Stats without enough eligible curves retain
+the historical dispersion exactly and are labeled `historical_only`.
+
+With final dispersion fixed, DraftKings and FanDuel probabilities are inverted with a
+bounded monotonic root solver, while every Kalshi source/player/stat curve receives one
+robust joint mean fit across all eligible thresholds. The stage back-substitutes each
+mean to quote-level modeled probabilities and residuals, and writes or updates:
+
+- `dispersion_calibration.csv` with historical, Kalshi-only, MAP, and final values;
+- `historical_calibration.json` with per-stat current-market update diagnostics;
+- `source_projections.csv` at source/player/stat grain;
+- `priced_markets.csv` with quote-level model inclusion and residual lineage; and
+- `model_validation.json` with optimizer, bounds, monotonicity, residual, holdout,
+  exclusion-lineage, and sensitivity checks.
+
+Sensitivity low/high values repeat the fit at the historical bootstrap dispersion bounds
+and, for Kalshi, bid/ask endpoints. They are explicitly labeled model-sensitivity bounds,
+not confidence intervals. A failed historical calibration, optimizer failure, parameter
+bound hit, excessive residual, duplicate Kalshi threshold, or failed back-substitution
+stops the stage and preserves `model_validation.json` without overwriting its model
+inputs.
+
 ## Phase 3 market validation and normalization
 
 Validate the three collected market snapshots before any pricing or identity work:
