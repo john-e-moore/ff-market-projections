@@ -23,8 +23,8 @@ from .distributions import (
 from .historical import TARGET_STATS
 
 
-MARKET_UPDATE_VERSION = "negative_binomial_kalshi_map_v1"
-SOURCE_ESTIMATION_VERSION = "negative_binomial_source_means_v1"
+MARKET_UPDATE_VERSION = "negative_binomial_kalshi_map_v2"
+SOURCE_ESTIMATION_VERSION = "negative_binomial_source_means_v2"
 _SOURCES = frozenset({"draftkings", "fanduel", "kalshi"})
 _MARKET_COLUMNS = {
     "run_id", "season", "source", "source_market_id", "snapshot_utc", "raw_player_name",
@@ -222,6 +222,7 @@ def _annotate_model_eligibility(markets: pd.DataFrame, model_config: dict[str, A
         "modeled_probability", "probability_residual", "logit_probability_residual",
         "source_projection_mean", "source_projection_method", "final_dispersion",
         "dispersion_source", "calibration_version", "market_update_version",
+        "source_projection_quality_status", "source_projection_exclusion_reason",
     ):
         frame[column] = None
     return frame
@@ -432,6 +433,9 @@ def _update_dispersions(
         map_fit: SharedDispersionFit | None = None
         prior_sd: float | None = None
         holdout = {"count": 0, "failed_fits": 0, "logit_mae": None, "logit_rmse": None}
+        residual_passed = False
+        holdout_passed = False
+        map_validation_passed = False
 
         if update_requested and enough_groups and not duplicate_thresholds.any():
             try:
@@ -468,10 +472,15 @@ def _update_dispersions(
                     kalshi_only_bound_hit=kalshi_only.nuisance_mean_bound_hit,
                     map_bound_hit=map_fit.nuisance_mean_bound_hit,
                 )
+                residual_passed = map_fit.logit_rmse <= float(current["max_kalshi_logit_rmse"])
+                update_validation_severity = (
+                    "error" if current["kalshi_conflict_policy"] == "fail" else "warning"
+                )
                 _check(
                     checks, f"model.{stat}.kalshi_curve_residual",
-                    map_fit.logit_rmse <= float(current["max_kalshi_logit_rmse"]),
+                    residual_passed,
                     "Kalshi MAP curve logit RMSE is within tolerance",
+                    severity=update_validation_severity,
                     observed=map_fit.logit_rmse, maximum=float(current["max_kalshi_logit_rmse"]),
                 )
                 holdout_values: list[float] = []
@@ -498,6 +507,7 @@ def _update_dispersions(
                 _check(
                     checks, f"model.{stat}.kalshi_threshold_holdout", holdout_passed,
                     "Leave-one-threshold-out Kalshi logit MAE is within tolerance",
+                    severity=update_validation_severity,
                     observed=holdout["logit_mae"], maximum=float(current["max_kalshi_holdout_logit_mae"]),
                     failed_fits=holdout_failures, predictions=holdout_count,
                 )
@@ -510,13 +520,24 @@ def _update_dispersions(
                     observed=delta, maximum=float(current["max_kalshi_log_dispersion_delta"]),
                     historical_dispersion=historical_dispersion, kalshi_only_dispersion=kalshi_only.dispersion,
                 )
-                if (
+                optimizer_valid = (
                     kalshi_only.converged and map_fit.converged
                     and not kalshi_only.dispersion_bound_hit and not map_fit.dispersion_bound_hit
                     and not kalshi_only.nuisance_mean_bound_hit and not map_fit.nuisance_mean_bound_hit
-                ):
+                )
+                conflict_allows_update = (
+                    conflict_passed or current["kalshi_conflict_policy"] == "warning"
+                )
+                map_validation_passed = residual_passed and holdout_passed
+                if optimizer_valid and map_validation_passed and conflict_allows_update:
                     method = "historical_plus_kalshi"
                     fallback_reason = ""
+                elif optimizer_valid and not map_validation_passed:
+                    fallback_reason = "kalshi_map_validation_failed"
+                elif optimizer_valid and not conflict_allows_update:
+                    fallback_reason = "kalshi_historical_conflict"
+                else:
+                    fallback_reason = "kalshi_update_optimizer_failed"
         elif update_requested:
             _check(
                 checks, f"model.{stat}.kalshi_calibration_groups", enough_groups,
@@ -546,6 +567,7 @@ def _update_dispersions(
         output.loc[stat, "kalshi_optimizer_converged"] = map_fit.converged if map_fit else None
         output.loc[stat, "kalshi_dispersion_bound_hit"] = map_fit.dispersion_bound_hit if map_fit else None
         output.loc[stat, "kalshi_nuisance_mean_bound_hit"] = map_fit.nuisance_mean_bound_hit if map_fit else None
+        output.loc[stat, "kalshi_map_validation_passed"] = map_validation_passed if map_fit else None
         output.loc[stat, "fallback_reason"] = fallback_reason
 
         update_reports[stat] = {
@@ -560,6 +582,9 @@ def _update_dispersions(
             "minimum_groups": int(model_config["minimum_calibration_groups"]),
             "minimum_thresholds_per_group": int(model_config["minimum_thresholds_per_group"]),
             "prior_log_sd": prior_sd,
+            "curve_residual_passed": residual_passed if map_fit else None,
+            "threshold_holdout_passed": holdout_passed if map_fit else None,
+            "map_validation_passed": map_validation_passed if map_fit else None,
             "threshold_holdout": holdout,
         }
     return output.reset_index(drop=True), update_reports
@@ -659,6 +684,7 @@ def _estimate_source_projections(
     sportsbook_residuals: list[float] = []
     kalshi_residuals: list[float] = []
     kalshi_holdouts: list[float] = []
+    quarantined_kalshi_curves: list[dict[str, Any]] = []
     solvers_passed = True
     sensitivities_passed = True
 
@@ -688,7 +714,8 @@ def _estimate_source_projections(
                 **common, "mean": None, "sensitivity_low": None, "sensitivity_high": None,
                 "projection_method": "unavailable", "thresholds_used": "", "fit_objective": None,
                 "fit_error": None, "logit_rmse": None, "max_abs_logit_residual": None,
-                "holdout_logit_mae": None, "optimizer_converged": None, "mean_bound_hit": None,
+                "holdout_logit_mae": None, "holdout_failed_fits": None,
+                "optimizer_converged": None, "mean_bound_hit": None,
                 "quality_status": "excluded", "exclusion_reason": "|".join(excluded_reasons) or "no_eligible_quotes",
             })
             continue
@@ -702,6 +729,7 @@ def _estimate_source_projections(
         logit_rmse: float | None = None
         max_logit_residual: float | None = None
         holdout_mae: float | None = None
+        holdout_failed_fits = 0
         modeled: tuple[float, ...] = ()
         residuals: tuple[float, ...] = ()
         logit_residuals: tuple[float, ...] = ()
@@ -749,9 +777,7 @@ def _estimate_source_projections(
                     str(model_config["robust_loss"]),
                 )
                 holdout_mae = holdout["logit_mae"]
-                if holdout_mae is not None:
-                    kalshi_holdouts.append(float(holdout_mae))
-                kalshi_residuals.append(curve.logit_rmse)
+                holdout_failed_fits = int(holdout["failed_fits"])
         except DistributionError as exc:
             exclusion_reason = f"mean_fit_failed:{exc}"
 
@@ -775,6 +801,27 @@ def _estimate_source_projections(
                 "sensitivity_not_identifiable" if sensitivity_low is None else
                 "optimizer_nonconvergence"
             )
+        if quality_status == "passed" and source == "kalshi":
+            curve_exclusion_reasons: list[str] = []
+            if logit_rmse is None or logit_rmse > float(current["max_kalshi_logit_rmse"]):
+                curve_exclusion_reasons.append("kalshi_curve_residual_exceeds_limit")
+            if len(eligible) > 1 and (
+                holdout_failed_fits > 0 or holdout_mae is None
+                or holdout_mae > float(current["max_kalshi_holdout_logit_mae"])
+            ):
+                curve_exclusion_reasons.append("kalshi_curve_holdout_exceeds_limit")
+            if curve_exclusion_reasons:
+                quality_status = "excluded"
+                exclusion_reason = "|".join(curve_exclusion_reasons)
+                quarantined_kalshi_curves.append({
+                    "stat": stat,
+                    "canonical_player_id": base["canonical_player_id"],
+                    "reasons": tuple(curve_exclusion_reasons),
+                })
+            else:
+                kalshi_residuals.append(float(logit_rmse))
+                if holdout_mae is not None:
+                    kalshi_holdouts.append(float(holdout_mae))
         projection_rows.append({
             **common,
             "mean": mean,
@@ -787,6 +834,7 @@ def _estimate_source_projections(
             "logit_rmse": logit_rmse,
             "max_abs_logit_residual": max_logit_residual,
             "holdout_logit_mae": holdout_mae,
+            "holdout_failed_fits": holdout_failed_fits,
             "optimizer_converged": converged,
             "mean_bound_hit": bound_hit,
             "quality_status": quality_status,
@@ -807,6 +855,8 @@ def _estimate_source_projections(
                 frame.at[index, "dispersion_source"] = _text(dispersion_row["dispersion_source"])
                 frame.at[index, "calibration_version"] = _text(dispersion_row["calibration_version"])
                 frame.at[index, "market_update_version"] = MARKET_UPDATE_VERSION
+                frame.at[index, "source_projection_quality_status"] = quality_status
+                frame.at[index, "source_projection_exclusion_reason"] = exclusion_reason
 
     projections = pd.DataFrame.from_records(projection_rows)
     if not projections.empty:
@@ -828,14 +878,28 @@ def _estimate_source_projections(
     max_kalshi = max(kalshi_residuals, default=0.0)
     _check(
         checks, "model.kalshi_source_residuals", max_kalshi <= float(current["max_kalshi_logit_rmse"]),
-        "Kalshi source-curve logit RMSE is within tolerance",
+        "Every eligible Kalshi source curve has logit RMSE within tolerance",
         observed=max_kalshi, maximum=float(current["max_kalshi_logit_rmse"]),
+        evaluated_curves=len(kalshi_residuals), quarantined_curves=len(quarantined_kalshi_curves),
     )
     max_holdout = max(kalshi_holdouts, default=0.0)
     _check(
         checks, "model.kalshi_source_holdout", max_holdout <= float(current["max_kalshi_holdout_logit_mae"]),
-        "Kalshi leave-one-threshold-out source residuals are within tolerance",
+        "Every eligible multi-threshold Kalshi curve has leave-one-threshold-out error within tolerance",
         observed=max_holdout, maximum=float(current["max_kalshi_holdout_logit_mae"]),
+        evaluated_curves=len(kalshi_holdouts), quarantined_curves=len(quarantined_kalshi_curves),
+    )
+    quarantined_by_stat: dict[str, int] = {}
+    quarantined_by_reason: dict[str, int] = {}
+    for value in quarantined_kalshi_curves:
+        quarantined_by_stat[value["stat"]] = quarantined_by_stat.get(value["stat"], 0) + 1
+        for reason in value["reasons"]:
+            quarantined_by_reason[reason] = quarantined_by_reason.get(reason, 0) + 1
+    _check(
+        checks, "model.kalshi_curves_quarantined", not quarantined_kalshi_curves,
+        "Kalshi curves that fail residual or holdout limits are excluded from downstream consensus",
+        severity="warning", curves=len(quarantined_kalshi_curves),
+        by_stat=quarantined_by_stat, by_reason=quarantined_by_reason,
     )
     excluded_contributed = (
         (frame["model_inclusion_status"] != "included") & frame["modeled_probability"].notna()
@@ -925,6 +989,11 @@ def estimate_market_means(
             "model_eligible_quotes": int((enriched_markets["model_inclusion_status"] == "included").sum()),
             "source_projection_rows": int(len(projections)),
             "eligible_source_projections": int((projections["quality_status"] == "passed").sum()) if not projections.empty else 0,
+            "quarantined_kalshi_curves": int((
+                projections["source"].eq("kalshi")
+                & projections["quality_status"].eq("excluded")
+                & projections["exclusion_reason"].astype(str).str.startswith("kalshi_curve_")
+            ).sum()) if not projections.empty else 0,
             "historical_only_stats": sum(value["method"] == "historical_only" for value in update_reports.values()),
             "historical_plus_kalshi_stats": sum(value["method"] == "historical_plus_kalshi" for value in update_reports.values()),
             "errors": len(errors),

@@ -130,6 +130,31 @@ def _kalshi_curves(*, dispersion: float = 4.0) -> tuple[pd.DataFrame, dict[str, 
     return pd.DataFrame.from_records(rows), means
 
 
+def _steep_kalshi_curves() -> pd.DataFrame:
+    rows: list[dict] = []
+    thresholds = np.asarray([750, 1000, 1250])
+    for player_number, mean in enumerate([850.0, 925.0, 1000.0, 1075.0, 1150.0]):
+        player = f"Steep Curve {player_number}"
+        probabilities = negative_binomial_survival(thresholds, mean, 20.0)
+        for threshold, probability in zip(thresholds, probabilities, strict=True):
+            rows.append(_market(
+                "kalshi", player, "receiving_yards", int(threshold), float(probability),
+                market_id=f"steep-{player_number}-{threshold}",
+            ))
+    return pd.DataFrame.from_records(rows)
+
+
+def _narrow_historical_prior(*, receiving_yards: float = 1.5) -> pd.DataFrame:
+    dispersions = _dispersions(receiving_yards=receiving_yards)
+    target = dispersions["stat"].eq("receiving_yards")
+    log_dispersion = math.log(receiving_yards)
+    dispersions.loc[target, "historical_dispersion_lower"] = math.exp(log_dispersion - 0.02)
+    dispersions.loc[target, "historical_dispersion_upper"] = math.exp(log_dispersion + 0.02)
+    dispersions.loc[target, "historical_log_dispersion_lower"] = log_dispersion - 0.02
+    dispersions.loc[target, "historical_log_dispersion_upper"] = log_dispersion + 0.02
+    return dispersions
+
+
 def test_recovers_shared_kalshi_dispersion_and_player_means_with_map_update() -> None:
     markets, true_means = _kalshi_curves()
     result = estimate_market_means(markets, _dispersions(), _historical_report(), _config())
@@ -156,6 +181,87 @@ def test_recovers_shared_kalshi_dispersion_and_player_means_with_map_update() ->
     assert included.sort_values("canonical_threshold").groupby("canonical_player_id")["modeled_probability"].apply(
         lambda values: np.all(np.diff(values.to_numpy(dtype=float)) <= 0)
     ).all()
+
+
+def test_prior_conflict_warning_falls_back_and_quarantines_bad_kalshi_curves() -> None:
+    historical = 1.5
+    sportsbook_probability = float(negative_binomial_survival(1001, 900.0, historical))
+    markets = pd.DataFrame.from_records([
+        *_steep_kalshi_curves().to_dict(orient="records"),
+        _market(
+            "draftkings", "Sportsbook Receiver", "receiving_yards", 1001,
+            sportsbook_probability, market_id="dk-prior-conflict",
+        ),
+    ])
+
+    result = estimate_market_means(
+        markets, _narrow_historical_prior(receiving_yards=historical),
+        _historical_report(), _config(),
+    )
+
+    receiving = result.dispersions.set_index("stat").loc["receiving_yards"]
+    assert result.validation["status"] == "passed"
+    assert receiving["method"] == "historical_only"
+    assert receiving["final_dispersion"] == pytest.approx(historical)
+    assert receiving["fallback_reason"] == "kalshi_map_validation_failed"
+    assert receiving["kalshi_only_dispersion"] == pytest.approx(20.0, rel=0.05)
+    assert receiving["kalshi_logit_rmse"] > _config()["current_market"]["max_kalshi_logit_rmse"]
+
+    projections = result.source_projections.set_index(["source", "canonical_player_name"])
+    assert projections.loc[("draftkings", "Sportsbook Receiver"), "quality_status"] == "passed"
+    kalshi = result.source_projections.query("source == 'kalshi'")
+    assert set(kalshi["quality_status"]) == {"excluded"}
+    assert kalshi["exclusion_reason"].str.contains("kalshi_curve_residual_exceeds_limit").all()
+    assert kalshi["exclusion_reason"].str.contains("kalshi_curve_holdout_exceeds_limit").all()
+
+    checks = {check["name"]: check for check in result.validation["checks"]}
+    assert checks["model.receiving_yards.kalshi_curve_residual"]["severity"] == "warning"
+    assert checks["model.receiving_yards.kalshi_threshold_holdout"]["severity"] == "warning"
+    assert checks["model.kalshi_curves_quarantined"]["details"]["curves"] == len(kalshi)
+
+
+def test_prior_conflict_fail_policy_remains_a_hard_failure() -> None:
+    config = _config()
+    config["current_market"]["kalshi_conflict_policy"] = "fail"
+    result = estimate_market_means(
+        _steep_kalshi_curves(), _narrow_historical_prior(), _historical_report(), config,
+    )
+
+    receiving = result.dispersions.set_index("stat").loc["receiving_yards"]
+    checks = {check["name"]: check for check in result.validation["checks"]}
+    assert result.validation["status"] == "failed"
+    assert receiving["method"] == "historical_only"
+    assert receiving["fallback_reason"] == "kalshi_map_validation_failed"
+    assert checks["model.receiving_yards.kalshi_curve_residual"]["severity"] == "error"
+    assert checks["model.receiving_yards.kalshi_threshold_holdout"]["severity"] == "error"
+
+
+def test_bad_source_curve_is_quarantined_without_invalidating_good_curves() -> None:
+    markets, _ = _kalshi_curves()
+    outlier = pd.DataFrame.from_records([
+        _market("kalshi", "Outlier Curve", "receiving_yards", 700, 0.95, market_id="outlier-700"),
+        _market("kalshi", "Outlier Curve", "receiving_yards", 1000, 0.05, market_id="outlier-1000"),
+    ])
+    result = estimate_market_means(
+        pd.concat([markets, outlier], ignore_index=True),
+        _dispersions(), _historical_report(), _config(),
+    )
+
+    assert result.validation["status"] == "passed"
+    projections = result.source_projections.set_index("canonical_player_name")
+    assert set(projections.drop(index="Outlier Curve")["quality_status"]) == {"passed"}
+    assert projections.loc["Outlier Curve", "quality_status"] == "excluded"
+    assert "kalshi_curve_residual_exceeds_limit" in projections.loc["Outlier Curve", "exclusion_reason"]
+    assert "kalshi_curve_holdout_exceeds_limit" in projections.loc["Outlier Curve", "exclusion_reason"]
+    outlier_quotes = result.priced_markets.query("canonical_player_name == 'Outlier Curve'")
+    assert set(outlier_quotes["source_projection_quality_status"]) == {"excluded"}
+    assert outlier_quotes["source_projection_exclusion_reason"].str.contains(
+        "kalshi_curve_residual_exceeds_limit"
+    ).all()
+    checks = {check["name"]: check for check in result.validation["checks"]}
+    assert checks["model.kalshi_source_residuals"]["passed"]
+    assert checks["model.kalshi_source_holdout"]["passed"]
+    assert checks["model.kalshi_curves_quarantined"]["details"]["curves"] == 1
 
 
 def test_historical_only_fallback_is_exact_and_single_quote_mean_is_reproducible() -> None:
