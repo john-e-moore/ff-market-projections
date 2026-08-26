@@ -121,9 +121,16 @@ def _validate(values: dict[str, Any]) -> None:
         _positive(_expect(filters, key, "historical.prior_opportunity_filters"), f"historical.prior_opportunity_filters.{key}", allow_zero=True)
 
     pricing = values["pricing"]
-    if pricing.get("sportsbook_devig_method") not in {"proportional", "power"}:
-        raise ConfigError("pricing.sportsbook_devig_method must be proportional or power")
+    if pricing.get("sportsbook_devig_method") != "proportional":
+        raise ConfigError("pricing.sportsbook_devig_method must be proportional")
     _positive(_expect(pricing, "probability_tolerance", "pricing"), "pricing.probability_tolerance")
+    if not isinstance(_expect(pricing, "reject_ambiguous_integer_lines", "pricing"), bool):
+        raise ConfigError("pricing.reject_ambiguous_integer_lines must be boolean")
+    kalshi = sources["kalshi"]
+    if not isinstance(kalshi["require_two_sided_quote"], bool):
+        raise ConfigError("sources.kalshi.require_two_sided_quote must be boolean")
+    _positive(kalshi["max_spread_probability_points"], "sources.kalshi.max_spread_probability_points", allow_zero=True)
+    _positive(kalshi["min_open_interest_contracts"], "sources.kalshi.min_open_interest_contracts", allow_zero=True)
 
     model = values["model"]
     if model.get("family") != "negative_binomial":
