@@ -33,6 +33,7 @@ def test_config_loads_and_effective_copy_preserves_semantics(tmp_path: Path) -> 
         ("prior_seasons = 4", "prior_seasons must be between 1 and 3"),
         ("passing_yards = [2.0, 1.0]", "dispersion_bounds.passing_yards"),
         ("max_brier_calibration_gap = 1.1", "max_brier_calibration_gap"),
+        ("recency_half_life_candidates = [5.0, 1.0]", "recency_half_life_candidates"),
     ],
 )
 def test_invalid_settings_fail_usefully(tmp_path: Path, replacement: str, message: str) -> None:
@@ -47,6 +48,8 @@ def test_invalid_settings_fail_usefully(tmp_path: Path, replacement: str, messag
         source = source.replace("passing_yards = [0.05, 1000.0]", replacement)
     elif replacement.startswith("max_brier"):
         source = source.replace("max_brier_calibration_gap = 0.10", replacement)
+    elif replacement.startswith("recency_half_life_candidates"):
+        source = source.replace("recency_half_life_candidates = [1.0, 3.0, 5.0, 10.0]", replacement)
     else:
         source = source.replace("prior_seasons = 3", replacement)
     path = tmp_path / "bad.toml"

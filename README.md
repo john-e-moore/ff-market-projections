@@ -81,7 +81,10 @@ The command atomically writes `historical_player_seasons.csv`,
 run's `artifacts/` directory. It fails closed for incomplete seasons, reconciliation
 errors, implausible totals, insufficient calibration cohorts, or any look-ahead
 feature. Baseline eligibility uses prior-season opportunity only; missing opportunity
-is preserved as missing and never converted to zero.
+is preserved as missing and never converted to zero. The artifact retains both the raw
+lagged-player/cohort baseline and its monotone power-calibrated mean. Correction
+parameters and their recency half-life are selected by nested rolling-origin Poisson
+mean score, use lagged position only, and are frozen before the configured holdout.
 
 ## Phase 6A historical distribution calibration
 

@@ -9,6 +9,8 @@ from typing import Any, Iterable
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import minimize
+from scipy.special import gammaln
 
 from .contracts import CheckResult
 
@@ -78,6 +80,30 @@ class HistoricalPreparation:
     player_seasons: pd.DataFrame
     backtest_predictions: pd.DataFrame
     validation: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class BaselineBiasFit:
+    """A leakage-free monotone calibration of a raw preseason baseline."""
+
+    intercept: float
+    exponent: float
+    objective_poisson_nll: float
+    training_player_seasons: int
+    training_seasons: tuple[int, ...]
+    max_observation_season: int
+    converged: bool
+    bound_hit: bool
+    optimizer_iterations: int
+    optimizer_evaluations: int
+
+
+@dataclass(frozen=True)
+class BaselineBiasHalfLifeSelection:
+    half_life_seasons: float
+    validation_seasons: tuple[int, ...]
+    poisson_nll_per_player_season: float | None
+    candidate_scores: dict[str, float | None]
 
 
 def scheduled_games(season: int) -> int:
@@ -364,6 +390,331 @@ def _weighted_mean(values: list[float], weights: list[float]) -> float | None:
     return float(np.average(np.asarray(values, dtype=float), weights=np.asarray(weights, dtype=float)))
 
 
+def fit_baseline_bias_correction(
+    history: pd.DataFrame,
+    *,
+    reference_season: int,
+    recency_half_life_seasons: float,
+    exponent_bounds: tuple[float, float],
+) -> BaselineBiasFit:
+    """Fit ``corrected = exp(intercept) * raw ** exponent`` on prior seasons.
+
+    The Poisson objective is used only as a proper mean-scoring rule. Predictive
+    dispersion remains a separate Phase 6A fit against the corrected, fixed
+    means.
+    """
+
+    required = {"target_season", "realized_total", "baseline_mean_raw", "training_eligible"}
+    missing = sorted(required - set(history.columns))
+    if missing:
+        raise HistoricalDataError(
+            "historical.baseline_bias_correction",
+            f"Bias-correction history is missing column(s): {', '.join(missing)}",
+        )
+    frame = history.loc[history["training_eligible"]].copy()
+    for column in ("target_season", "realized_total", "baseline_mean_raw"):
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = frame.loc[
+        frame["target_season"].notna()
+        & frame["realized_total"].notna()
+        & frame["baseline_mean_raw"].notna()
+        & np.isfinite(frame["realized_total"])
+        & np.isfinite(frame["baseline_mean_raw"])
+        & (frame["realized_total"] >= 0)
+        & (frame["baseline_mean_raw"] > 0)
+        & (frame["target_season"] <= reference_season)
+    ].copy()
+    if frame.empty:
+        raise HistoricalDataError(
+            "historical.baseline_bias_correction",
+            "Bias correction requires at least one eligible positive-baseline prior observation",
+        )
+
+    lower, upper = (float(exponent_bounds[0]), float(exponent_bounds[1]))
+    if not 0 < lower < upper:
+        raise HistoricalDataError(
+            "historical.baseline_bias_correction",
+            "Bias-correction exponent bounds must satisfy 0 < lower < upper",
+        )
+    if not math.isfinite(recency_half_life_seasons) or recency_half_life_seasons <= 0:
+        raise HistoricalDataError(
+            "historical.baseline_bias_correction",
+            "Bias-correction recency half-life must be finite and positive",
+        )
+
+    seasons = frame["target_season"].to_numpy(dtype=float)
+    raw_means = frame["baseline_mean_raw"].to_numpy(dtype=float)
+    realized = frame["realized_total"].to_numpy(dtype=float)
+    weights = 0.5 ** ((int(reference_season) - seasons) / float(recency_half_life_seasons))
+    weights = weights / float(np.mean(weights))
+    weighted_ratio = float(np.dot(weights, realized) / np.dot(weights, raw_means))
+    initial_intercept = math.log(max(weighted_ratio, math.exp(-20.0)))
+    log_raw_means = np.log(raw_means)
+
+    def objective(parameters: np.ndarray) -> tuple[float, np.ndarray]:
+        intercept, exponent = (float(parameters[0]), float(parameters[1]))
+        log_means = intercept + exponent * log_raw_means
+        if not np.isfinite(log_means).all() or (np.abs(log_means) > 100.0).any():
+            return math.inf, np.asarray([math.nan, math.nan])
+        corrected_means = np.exp(log_means)
+        values = corrected_means - realized * log_means + gammaln(realized + 1.0)
+        if not np.isfinite(values).all():
+            return math.inf, np.asarray([math.nan, math.nan])
+        residuals = corrected_means - realized
+        gradient = np.asarray(
+            [np.dot(weights, residuals), np.dot(weights, residuals * log_raw_means)],
+            dtype=float,
+        )
+        return float(np.dot(weights, values)), gradient
+
+    optimized = minimize(
+        objective,
+        np.asarray([initial_intercept, 1.0], dtype=float),
+        method="L-BFGS-B",
+        jac=True,
+        bounds=((-20.0, 20.0), (lower, upper)),
+        options={"maxiter": 1_000, "ftol": 1e-12, "gtol": 1e-8},
+    )
+    intercept, exponent = (float(optimized.x[0]), float(optimized.x[1]))
+    tolerance = max(1e-6, (upper - lower) * 1e-6)
+    bound_hit = exponent - lower <= tolerance or upper - exponent <= tolerance
+    converged = bool(optimized.success and np.isfinite(optimized.fun) and np.isfinite([intercept, exponent]).all())
+    if not converged or bound_hit:
+        raise HistoricalDataError(
+            "historical.baseline_bias_correction",
+            "Rolling baseline bias correction did not produce a converged interior fit",
+            {
+                "reference_season": int(reference_season),
+                "converged": converged,
+                "bound_hit": bool(bound_hit),
+                "intercept": intercept,
+                "exponent": exponent,
+                "exponent_bounds": [lower, upper],
+            },
+        )
+    training_seasons = tuple(sorted(int(value) for value in frame["target_season"].unique()))
+    return BaselineBiasFit(
+        intercept=intercept,
+        exponent=exponent,
+        objective_poisson_nll=float(optimized.fun),
+        training_player_seasons=int(len(frame)),
+        training_seasons=training_seasons,
+        max_observation_season=max(training_seasons),
+        converged=converged,
+        bound_hit=bool(bound_hit),
+        optimizer_iterations=int(getattr(optimized, "nit", 0)),
+        optimizer_evaluations=int(getattr(optimized, "nfev", 0)),
+    )
+
+
+def _combined_feature_seasons(raw_value: Any, correction_seasons: tuple[int, ...]) -> str:
+    seasons = set(correction_seasons)
+    if not pd.isna(raw_value) and str(raw_value).strip():
+        seasons.update(int(value) for value in str(raw_value).split("|") if value)
+    return "|".join(str(value) for value in sorted(seasons))
+
+
+def select_baseline_bias_half_life(
+    history: pd.DataFrame,
+    *,
+    default_half_life_seasons: float,
+    candidates: tuple[float, ...],
+    minimum_training_seasons: int,
+    minimum_validation_seasons: int,
+    exponent_bounds: tuple[float, float],
+) -> BaselineBiasHalfLifeSelection:
+    """Select correction recency by nested rolling-origin Poisson score."""
+
+    eligible = history.loc[
+        history["training_eligible"]
+        & history["baseline_mean_raw"].gt(0)
+        & history["realized_total"].ge(0)
+    ].copy()
+    seasons = sorted(int(value) for value in eligible["target_season"].unique())
+    validation_seasons = tuple(
+        season
+        for season in seasons
+        if len([prior for prior in seasons if prior < season]) >= minimum_training_seasons
+    )
+    if len(validation_seasons) < minimum_validation_seasons:
+        return BaselineBiasHalfLifeSelection(
+            half_life_seasons=float(default_half_life_seasons),
+            validation_seasons=(),
+            poisson_nll_per_player_season=None,
+            candidate_scores={str(value): None for value in candidates},
+        )
+
+    candidate_scores: dict[str, float | None] = {}
+    for candidate in candidates:
+        total_nll = 0.0
+        total_rows = 0
+        candidate_failed = False
+        for validation_season in validation_seasons:
+            fold_training = eligible.loc[eligible["target_season"] < validation_season]
+            fold_validation = eligible.loc[eligible["target_season"] == validation_season]
+            try:
+                fold_fit = fit_baseline_bias_correction(
+                    fold_training,
+                    reference_season=validation_season - 1,
+                    recency_half_life_seasons=float(candidate),
+                    exponent_bounds=exponent_bounds,
+                )
+            except HistoricalDataError:
+                candidate_failed = True
+                break
+            raw_means = fold_validation["baseline_mean_raw"].to_numpy(dtype=float)
+            realized = fold_validation["realized_total"].to_numpy(dtype=float)
+            log_means = fold_fit.intercept + fold_fit.exponent * np.log(raw_means)
+            means = np.exp(log_means)
+            values = means - realized * log_means + gammaln(realized + 1.0)
+            if not np.isfinite(values).all():
+                candidate_failed = True
+                break
+            total_nll += float(np.sum(values))
+            total_rows += int(len(values))
+        candidate_scores[str(candidate)] = (
+            None if candidate_failed or total_rows == 0 else total_nll / total_rows
+        )
+
+    finite_scores = {
+        float(candidate): float(score)
+        for candidate, score in candidate_scores.items()
+        if score is not None and math.isfinite(score)
+    }
+    if not finite_scores:
+        raise HistoricalDataError(
+            "historical.baseline_bias_half_life_selection",
+            "No baseline bias-correction half-life candidate completed nested rolling validation",
+            {"candidate_scores": candidate_scores, "validation_seasons": list(validation_seasons)},
+        )
+    selected = min(finite_scores, key=lambda value: (finite_scores[value], value))
+    return BaselineBiasHalfLifeSelection(
+        half_life_seasons=float(selected),
+        validation_seasons=validation_seasons,
+        poisson_nll_per_player_season=float(finite_scores[selected]),
+        candidate_scores=candidate_scores,
+    )
+
+
+def apply_rolling_baseline_bias_correction(
+    predictions: pd.DataFrame,
+    historical_config: dict[str, Any],
+) -> pd.DataFrame:
+    """Calibrate raw baselines by rolling origin and freeze before holdout."""
+
+    result = predictions.copy()
+    result["baseline_mean_raw"] = pd.to_numeric(result["baseline_mean"], errors="coerce")
+    result["baseline_bias_method"] = "identity_insufficient_history"
+    result["baseline_bias_intercept"] = 0.0
+    result["baseline_bias_exponent"] = 1.0
+    result["baseline_bias_training_player_seasons"] = 0
+    result["baseline_bias_training_seasons"] = ""
+    result["baseline_bias_max_observation_season"] = np.nan
+    result["baseline_bias_objective_poisson_nll"] = np.nan
+    result["baseline_bias_recency_half_life_seasons"] = np.nan
+    result["baseline_bias_selection_validation_seasons"] = ""
+    result["baseline_bias_selection_poisson_nll_per_player_season"] = np.nan
+    result["baseline_bias_optimizer_converged"] = False
+    result["baseline_bias_bound_hit"] = False
+
+    start = int(historical_config["calibration_start_season"])
+    latest = int(historical_config["latest_completed_season"])
+    holdout_start = latest - int(historical_config["holdout_seasons"]) + 1
+    half_life = float(historical_config["recency_half_life_seasons"])
+    settings = historical_config["baseline_bias_correction"]
+    minimum_seasons = int(settings["minimum_seasons"])
+    minimum_validation_seasons = int(settings["minimum_validation_seasons"])
+    exponent_bounds = tuple(float(value) for value in settings["exponent_bounds"])
+    half_life_candidates = tuple(float(value) for value in settings["recency_half_life_candidates"])
+    fit_cache: dict[tuple[str, int], tuple[BaselineBiasFit, BaselineBiasHalfLifeSelection]] = {}
+
+    for stat in TARGET_STATS:
+        stat_rows = result["stat"] == stat
+        for target_season in range(start, latest + 1):
+            target_rows = stat_rows & (result["target_season"] == target_season)
+            if not target_rows.any():
+                continue
+            reference_season = min(target_season - 1, holdout_start - 1)
+            history = result.loc[
+                stat_rows
+                & (result["target_season"] >= start)
+                & (result["target_season"] <= reference_season)
+            ]
+            observed_seasons = sorted(
+                int(value)
+                for value in history.loc[
+                    history["training_eligible"]
+                    & history["baseline_mean_raw"].gt(0)
+                    & history["realized_total"].ge(0),
+                    "target_season",
+                ].unique()
+            )
+            if len(observed_seasons) < minimum_seasons:
+                continue
+            cache_key = (stat, reference_season)
+            if cache_key not in fit_cache:
+                selection = select_baseline_bias_half_life(
+                    history,
+                    default_half_life_seasons=half_life,
+                    candidates=half_life_candidates,
+                    minimum_training_seasons=minimum_seasons,
+                    minimum_validation_seasons=minimum_validation_seasons,
+                    exponent_bounds=exponent_bounds,  # type: ignore[arg-type]
+                )
+                fit = fit_baseline_bias_correction(
+                    history,
+                    reference_season=reference_season,
+                    recency_half_life_seasons=selection.half_life_seasons,
+                    exponent_bounds=exponent_bounds,  # type: ignore[arg-type]
+                )
+                fit_cache[cache_key] = (fit, selection)
+            fit, selection = fit_cache[cache_key]
+            positive = target_rows & result["baseline_mean_raw"].gt(0)
+            result.loc[positive, "baseline_mean"] = np.exp(
+                fit.intercept + fit.exponent * np.log(result.loc[positive, "baseline_mean_raw"])
+            )
+            result.loc[positive, "baseline_formula"] = (
+                "recency_weighted_player_plus_prior_position_cohort_rolling_power_poisson_v2"
+            )
+            result.loc[positive, "baseline_bias_method"] = str(settings["method"])
+            result.loc[positive, "baseline_bias_intercept"] = fit.intercept
+            result.loc[positive, "baseline_bias_exponent"] = fit.exponent
+            result.loc[positive, "baseline_bias_training_player_seasons"] = fit.training_player_seasons
+            result.loc[positive, "baseline_bias_training_seasons"] = "|".join(
+                str(value) for value in fit.training_seasons
+            )
+            result.loc[positive, "baseline_bias_max_observation_season"] = fit.max_observation_season
+            result.loc[positive, "baseline_bias_objective_poisson_nll"] = fit.objective_poisson_nll
+            result.loc[positive, "baseline_bias_recency_half_life_seasons"] = selection.half_life_seasons
+            result.loc[positive, "baseline_bias_selection_validation_seasons"] = "|".join(
+                str(value) for value in selection.validation_seasons
+            )
+            result.loc[positive, "baseline_bias_selection_poisson_nll_per_player_season"] = (
+                selection.poisson_nll_per_player_season
+            )
+            result.loc[positive, "baseline_bias_optimizer_converged"] = fit.converged
+            result.loc[positive, "baseline_bias_bound_hit"] = fit.bound_hit
+            result.loc[positive, "feature_seasons"] = result.loc[positive, "feature_seasons"].map(
+                lambda value: _combined_feature_seasons(value, fit.training_seasons)
+            )
+            result.loc[positive, "max_feature_season"] = result.loc[positive, "feature_seasons"].map(
+                lambda value: max(int(season) for season in str(value).split("|") if season)
+            )
+
+    invalid = (
+        result["baseline_mean_raw"].gt(0)
+        & result["baseline_mean"].notna()
+        & (~np.isfinite(result["baseline_mean"]) | (result["baseline_mean"] <= 0))
+    )
+    if invalid.any():
+        raise HistoricalDataError(
+            "historical.baseline_bias_correction",
+            "Bias correction produced non-finite or nonpositive means from positive raw baselines",
+            {"rows": int(invalid.sum())},
+        )
+    return result
+
+
 def _precompute_cohorts(seasons: pd.DataFrame, historical_config: dict[str, Any]) -> dict[tuple[int, str, str], tuple[float | None, int, list[int]]]:
     """Compute leakage-free cohort summaries once per target season/position/stat."""
 
@@ -447,7 +798,18 @@ def _backtest_predictions(seasons: pd.DataFrame, historical_config: dict[str, An
                     player_weights.append(recency_weight)
                     history_seasons.append(int(prior.season))
 
-            position = _nonempty_text(target.position)
+            # Target-season position is an outcome-side field in this source.
+            # Use only the latest lagged position when selecting a cohort.
+            position = next(
+                (
+                    prior_position
+                    for prior in prior_rows
+                    if prior is not None
+                    for prior_position in [_nonempty_text(prior.position)]
+                    if prior_position is not None
+                ),
+                None,
+            )
             cohort_component_17, cohort_count, cohort_seasons = cohorts.get(
                 (target_season, position, stat), (None, 0, [])
             ) if position is not None else (None, 0, [])
@@ -539,10 +901,52 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
     if duplicate_output.any():
         raise HistoricalDataError("historical.output_keys_unique", "Historical player-season-stat output keys are not unique", {"rows": int(duplicate_output.sum())})
 
-    predictions = _backtest_predictions(seasons, historical_config)
+    predictions = apply_rolling_baseline_bias_correction(
+        _backtest_predictions(seasons, historical_config), historical_config
+    )
     leaking = predictions["max_feature_season"].notna() & (predictions["max_feature_season"] >= predictions["target_season"])
     if leaking.any():
         raise HistoricalDataError("historical.no_lookahead", "A baseline feature uses its target or a future season", {"rows": int(leaking.sum())})
+    bias_lineage_leaking = (
+        predictions["baseline_bias_max_observation_season"].notna()
+        & (predictions["baseline_bias_max_observation_season"] >= predictions["target_season"])
+    )
+    if bias_lineage_leaking.any():
+        raise HistoricalDataError(
+            "historical.baseline_bias_no_lookahead",
+            "A baseline bias correction uses its target or a future season",
+            {"rows": int(bias_lineage_leaking.sum())},
+        )
+    holdout_start = (
+        int(historical_config["latest_completed_season"])
+        - int(historical_config["holdout_seasons"])
+        + 1
+    )
+    fitted_holdout = predictions.loc[
+        (predictions["target_season"] >= holdout_start)
+        & (predictions["baseline_bias_method"] == "rolling_power_poisson")
+    ]
+    holdout_frozen = bool(
+        fitted_holdout.empty
+        or (
+            fitted_holdout["baseline_bias_max_observation_season"].notna().all()
+            and (fitted_holdout["baseline_bias_max_observation_season"] <= holdout_start - 1).all()
+            and fitted_holdout.groupby("stat")[[
+                "baseline_bias_intercept", "baseline_bias_exponent",
+                "baseline_bias_recency_half_life_seasons",
+            ]]
+            .nunique(dropna=False)
+            .le(1)
+            .to_numpy()
+            .all()
+        )
+    )
+    if not holdout_frozen:
+        raise HistoricalDataError(
+            "historical.holdout_mean_correction_frozen",
+            "Baseline bias-correction parameters must be fitted before and frozen across the final holdout",
+            {"holdout_start": holdout_start},
+        )
 
     checks = [
         CheckResult("historical.seasons_complete", True, details={"first": int(seasons["season"].min()), "last": int(seasons["season"].max()), "count": int(seasons["season"].nunique())}),
@@ -552,6 +956,12 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
         CheckResult("historical.output_keys_unique", True, details={"rows": int(len(player_seasons)), "key": ["season", "gsis_player_id", "team", "stat"]}),
         CheckResult("historical.schedule_lengths", True, details={"sixteen_game_seasons": int((seasons["schedule_games"] == 16).sum()), "seventeen_game_seasons": int((seasons["schedule_games"] == 17).sum()), "player_schedule_exceptions": int(schedule_exceptions.sum())}),
         CheckResult("historical.no_lookahead", True, details={"baselines": int(len(predictions))}),
+        CheckResult("historical.baseline_bias_no_lookahead", True, details={"baselines": int(len(predictions))}),
+        CheckResult(
+            "historical.holdout_mean_correction_frozen",
+            True,
+            details={"holdout_start": holdout_start, "maximum_observation_season": holdout_start - 1},
+        ),
     ]
     missingness_rates = {
         column: float(seasons[column].isna().mean())
@@ -599,6 +1009,25 @@ def prepare_historical_data(path: str | Path, historical_config: dict[str, Any])
         "prior_seasons": int(historical_config["prior_seasons"]),
         "recency_half_life_seasons": float(historical_config["recency_half_life_seasons"]),
         "minimum_training_seasons": int(historical_config["minimum_training_seasons"]),
+        "baseline_bias_correction": {
+            **dict(historical_config["baseline_bias_correction"]),
+            "holdout_start": holdout_start,
+            "maximum_holdout_observation_season": holdout_start - 1,
+            "holdout_parameters": {
+                stat: {
+                    "intercept": float(group["baseline_bias_intercept"].iloc[0]),
+                    "exponent": float(group["baseline_bias_exponent"].iloc[0]),
+                    "training_player_seasons": int(group["baseline_bias_training_player_seasons"].iloc[0]),
+                    "training_seasons": str(group["baseline_bias_training_seasons"].iloc[0]),
+                    "recency_half_life_seasons": float(group["baseline_bias_recency_half_life_seasons"].iloc[0]),
+                    "selection_validation_seasons": str(group["baseline_bias_selection_validation_seasons"].iloc[0]),
+                    "selection_poisson_nll_per_player_season": float(
+                        group["baseline_bias_selection_poisson_nll_per_player_season"].iloc[0]
+                    ),
+                }
+                for stat, group in fitted_holdout.groupby("stat", sort=True)
+            },
+        },
         "prior_opportunity_filters": dict(historical_config["prior_opportunity_filters"]),
         "opportunity_by_stat": dict(_OPPORTUNITY_BY_STAT),
         "signed_yardage_stats": sorted(_SIGNED_YARDAGE_STATS),

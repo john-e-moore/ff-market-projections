@@ -12,7 +12,12 @@ import pandas as pd
 import pytest
 
 from ff_market_projections.config import load_config
-from ff_market_projections.historical import HistoricalDataError, TARGET_STATS, prepare_historical_data
+from ff_market_projections.historical import (
+    HistoricalDataError,
+    TARGET_STATS,
+    apply_rolling_baseline_bias_correction,
+    prepare_historical_data,
+)
 from ff_market_projections.runs import initialize_run
 
 
@@ -96,13 +101,25 @@ def test_baselines_use_only_exact_prior_seasons_and_future_mutation_is_inert(tmp
     assert qb["max_feature_season"] < qb["target_season"]
 
 
+def test_target_season_position_does_not_select_the_baseline_cohort(tmp_path: Path) -> None:
+    config = _historical_config()
+    original = prepare_historical_data(FIXTURE, config).backtest_predictions
+    frame = pd.read_csv(FIXTURE)
+    frame.loc[(frame["season"] == 2022) & (frame["player_id"] == "00-QB"), "position"] = "TE"
+    modified = prepare_historical_data(_write_frame(tmp_path, frame), config).backtest_predictions
+    key = "target_season == 2022 and gsis_player_id == '00-QB' and stat == 'passing_yards'"
+    assert modified.query(key).iloc[0]["baseline_mean_raw"] == pytest.approx(
+        original.query(key).iloc[0]["baseline_mean_raw"]
+    )
+
+
 def test_rookies_insufficient_history_and_missing_opportunity_are_explicit() -> None:
     predictions = prepare_historical_data(FIXTURE, _historical_config()).backtest_predictions
     rookie = predictions.query("target_season == 2022 and gsis_player_id == '00-RK' and stat == 'receiving_yards'").iloc[0]
     assert rookie["player_history_seasons"] == 0
-    assert rookie["baseline_available"]
+    assert not rookie["baseline_available"]
     assert not rookie["training_eligible"]
-    assert rookie["cohort_status"] == "rookie_cohort_baseline"
+    assert rookie["cohort_status"] == "rookie_no_baseline"
 
     missing = predictions.query("target_season == 2022 and gsis_player_id == '00-WR' and stat == 'receiving_yards'").iloc[0]
     assert pd.isna(missing["prior_opportunity"])
@@ -114,6 +131,48 @@ def test_rookies_insufficient_history_and_missing_opportunity_are_explicit() -> 
     insufficient = predictions.query("target_season == 2021 and gsis_player_id == '00-QB' and stat == 'passing_yards'").iloc[0]
     assert insufficient["player_history_seasons"] == 2
     assert insufficient["training_eligible"]
+
+
+def test_rolling_power_bias_correction_is_frozen_before_holdout() -> None:
+    rows: list[dict[str, object]] = []
+    for season in range(2011, 2025):
+        for player, raw_mean in (("low", 100.0), ("high", 1000.0)):
+            rows.append({
+                "target_season": season,
+                "gsis_player_id": player,
+                "stat": "passing_yards",
+                "realized_total": round(0.2 * raw_mean ** 1.2),
+                "baseline_mean": raw_mean,
+                "training_eligible": True,
+                "feature_seasons": str(season - 1),
+                "max_feature_season": season - 1,
+                "baseline_formula": "raw",
+            })
+    predictions = pd.DataFrame.from_records(rows)
+    config = _historical_config()
+    config.update({"calibration_start_season": 2011, "latest_completed_season": 2024, "holdout_seasons": 3})
+    corrected = apply_rolling_baseline_bias_correction(predictions, config)
+
+    early = corrected.query("target_season == 2012")
+    assert set(early["baseline_bias_method"]) == {"identity_insufficient_history"}
+    holdout = corrected.query("target_season >= 2022")
+    assert set(holdout["baseline_bias_method"]) == {"rolling_power_poisson"}
+    assert set(holdout["baseline_bias_max_observation_season"]) == {2021.0}
+    assert holdout.groupby("stat")[[
+        "baseline_bias_intercept", "baseline_bias_exponent", "baseline_bias_recency_half_life_seasons",
+    ]].nunique().max().max() == 1
+    assert (holdout["max_feature_season"] < holdout["target_season"]).all()
+    low = holdout.query("gsis_player_id == 'low'").iloc[0]
+    high = holdout.query("gsis_player_id == 'high'").iloc[0]
+    assert low["baseline_mean"] / low["baseline_mean_raw"] < high["baseline_mean"] / high["baseline_mean_raw"]
+
+    mutated = predictions.copy()
+    mutated.loc[mutated["target_season"] >= 2022, "realized_total"] *= 10
+    mutated_holdout = apply_rolling_baseline_bias_correction(mutated, config).query("target_season >= 2022")
+    pd.testing.assert_series_equal(
+        holdout["baseline_mean"].reset_index(drop=True),
+        mutated_holdout["baseline_mean"].reset_index(drop=True),
+    )
 
 
 @pytest.mark.parametrize(
@@ -214,6 +273,7 @@ def test_cli_writes_all_three_immutable_run_scoped_artifacts(tmp_path: Path) -> 
     manifest = json.loads((run_dir / "metadata/manifest.json").read_text())
     status = json.loads((run_dir / "metadata/run_status.json").read_text())
     assert manifest["historical_state"] == "succeeded"
+    assert manifest["historical"]["baseline_bias_correction"]["method"] == "rolling_power_poisson"
     assert manifest["tasks"]["prepare_historical_stats"]["state"] == "succeeded"
     assert manifest["task_dag"]["prepare_historical_stats"] == ["collect_nflverse_history"]
     assert status["state"] == "running"
