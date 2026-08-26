@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Update dispersion from eligible Kalshi curves and estimate source means."""
+"""Update dispersion from eligible current-market curves and estimate source means."""
 
 from __future__ import annotations
 
@@ -93,9 +93,10 @@ def _mark_succeeded(
     manifest["model_state"] = "succeeded"
     manifest["historical_calibration"] = {
         **manifest.get("historical_calibration", {}),
-        "method": "historical_with_optional_kalshi_update",
+        "method": "historical_with_current_market_update",
         "historical_only_stats": summary["historical_only_stats"],
-        "historical_plus_kalshi_stats": summary["historical_plus_kalshi_stats"],
+        "historical_plus_current_market_stats": summary["historical_plus_current_market_stats"],
+        "current_market_conflict_override_stats": summary["current_market_conflict_override_stats"],
         "market_update_version": summary["market_update_version"],
     }
     atomic_write_json(manifest_path, manifest)
@@ -200,7 +201,8 @@ def main() -> None:
         "source_projections": str(output_path),
         "source_projection_rows": len(result.source_projections),
         "eligible_source_projections": validation["summary"]["eligible_source_projections"],
-        "historical_plus_kalshi_stats": validation["summary"]["historical_plus_kalshi_stats"],
+        "historical_plus_current_market_stats": validation["summary"]["historical_plus_current_market_stats"],
+        "current_market_conflict_override_stats": validation["summary"]["current_market_conflict_override_stats"],
         "model_validation": str(validation_path),
         "model_validation_sha256": validation_hash,
     }, sort_keys=True))

@@ -53,9 +53,11 @@ _BASELINE_BIAS_CORRECTION_KEYS = {
 }
 _CURRENT_MARKET_KEYS = {
     "optimizer_tolerance", "optimizer_max_evaluations",
+    "max_current_market_logit_rmse", "max_current_market_holdout_logit_mae",
+    "max_current_market_log_dispersion_delta", "current_market_conflict_policy",
     "max_sportsbook_probability_residual", "max_kalshi_logit_rmse",
-    "max_kalshi_holdout_logit_mae", "max_kalshi_log_dispersion_delta",
-    "kalshi_conflict_policy", "mean_bounds",
+    "max_kalshi_holdout_logit_mae", "near_even_probability_band",
+    "max_near_even_mean_shift_relative", "max_near_even_mean_shift_absolute", "mean_bounds",
 }
 
 
@@ -202,7 +204,7 @@ def _validate(values: dict[str, Any]) -> None:
     model = values["model"]
     if model.get("family") != "negative_binomial":
         raise ConfigError("model.family must be negative_binomial")
-    if model.get("dispersion_mode") not in {"historical_only", "historical_with_kalshi_update"}:
+    if model.get("dispersion_mode") not in {"historical_only", "historical_with_current_market_update"}:
         raise ConfigError("model.dispersion_mode is unsupported")
     if model.get("on_calibration_failure") != "fail":
         raise ConfigError("model.on_calibration_failure must be fail")
@@ -285,14 +287,26 @@ def _validate(values: dict[str, Any]) -> None:
     if isinstance(evaluations, bool) or not isinstance(evaluations, int) or evaluations <= 0:
         raise ConfigError("model.current_market.optimizer_max_evaluations must be a positive integer")
     for key in (
+        "max_current_market_logit_rmse", "max_current_market_holdout_logit_mae",
+        "max_current_market_log_dispersion_delta",
         "max_sportsbook_probability_residual", "max_kalshi_logit_rmse",
-        "max_kalshi_holdout_logit_mae", "max_kalshi_log_dispersion_delta",
+        "max_kalshi_holdout_logit_mae", "max_near_even_mean_shift_relative",
+        "max_near_even_mean_shift_absolute",
     ):
         _positive(current[key], f"model.current_market.{key}", allow_zero=True)
     if current["max_sportsbook_probability_residual"] >= 1:
         raise ConfigError("model.current_market.max_sportsbook_probability_residual must be less than one")
-    if current["kalshi_conflict_policy"] not in {"warning", "fail"}:
-        raise ConfigError("model.current_market.kalshi_conflict_policy must be warning or fail")
+    if current["current_market_conflict_policy"] not in {"warning", "fail"}:
+        raise ConfigError("model.current_market.current_market_conflict_policy must be warning or fail")
+    near_even_band = current["near_even_probability_band"]
+    if (
+        not isinstance(near_even_band, list) or len(near_even_band) != 2
+        or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in near_even_band)
+        or not 0 < near_even_band[0] < 0.5 < near_even_band[1] < 1
+    ):
+        raise ConfigError("model.current_market.near_even_probability_band must straddle 0.5 inside (0, 1)")
+    if current["max_near_even_mean_shift_relative"] > 1:
+        raise ConfigError("model.current_market.max_near_even_mean_shift_relative cannot exceed one")
     mean_bounds = current["mean_bounds"]
     if not isinstance(mean_bounds, dict):
         raise ConfigError("model.current_market.mean_bounds must be a TOML table")

@@ -163,8 +163,8 @@ This is the highest-risk phase and should receive the most review.
 - Estimate historical predictive dispersion against rolling, preseason-like baselines with each baseline mean held fixed.
 - Add recency weighting, grouped bootstrap uncertainty, and the final configured holdout seasons.
 - Evaluate likelihood, threshold Brier scores, interval coverage, mean-decile calibration, bias, and availability cohorts.
-- Implement the empirical-Bayes update from eligible Kalshi groups, with historical bootstrap variance supplying the prior strength.
-- Use historical-only dispersion when Kalshi curves are insufficient and label the method explicitly.
+- Implement the empirical-Bayes update from eligible multi-threshold current-market groups, with historical bootstrap variance supplying the prior strength.
+- Quarantine invalid current-market groups, use a validated market-only conflict override when the historical prior cannot reproduce current curves, and label every method explicitly.
 - Back-substitute fitted parameters to quote-level predicted probabilities/residuals.
 - Write `dispersion_calibration.csv` and `source_projections.csv`.
 - Implement convergence, monotonicity, holdout, residual, bounds, and sensitivity validation.
@@ -175,8 +175,8 @@ This is the highest-risk phase and should receive the most review.
 - Exact synthetic negative-binomial probabilities.
 - Recover known means from single quotes when dispersion is fixed.
 - Recover known predictive dispersion from synthetic rolling historical forecasts.
-- Recover known shared dispersion and player means from synthetic multi-threshold Kalshi groups.
-- Verify the Kalshi MAP update moves dispersion in the expected direction and historical-only fallback is exact.
+- Recover known shared dispersion and player means from synthetic multi-threshold current-market groups.
+- Verify the MAP update, validated conflict override, near-even plausibility gate, and historical-only fallback.
 - Probability/mean monotonicity and extreme-but-valid probabilities.
 - Optimizer nonconvergence, bound hits, insufficient thresholds, and impossible inputs.
 - Reproducible bootstrap with fixed seed.
@@ -189,13 +189,13 @@ Before continuing, inspect calibration and residual diagnostics using a fresh re
 
 - Does the historical model meet holdout likelihood, calibration, and interval-coverage tolerances for every stat?
 - Are results stable across the 2011+, 2016+, and 2021+ sensitivity windows?
-- Are enough multi-threshold Kalshi groups eligible to update any stat?
+- Are enough multi-threshold current-market groups eligible to update every stat?
 - Do fitted survival curves decrease monotonically and visually track bid/ask ranges?
 - Do any stats consistently hit dispersion or mean bounds?
 - How sensitive are source means to dispersion bootstrap bounds and quote filters?
 - Are one-source means plausible compared with posted thresholds without treating thresholds as means?
 
-The checked-in Kalshi snapshot contains many one-sided contracts, so multi-threshold availability must be measured rather than assumed. Historical calibration is the default identification path; lack of Kalshi curves should produce a labeled historical-only result, not a failure by itself.
+The checked-in Kalshi snapshot contains many one-sided contracts, so multi-threshold availability must be measured rather than assumed and eligible sportsbook thresholds may supplement the curve. Historical-only fallback remains auditable, but the near-even plausibility gate must stop a materially misspecified probability-to-mean conversion.
 
 If the negative-binomial family fails materially for a stat, stop and compare an alternative configured family for that stat. Do not conceal poor fit by loosening all validation limits.
 
@@ -303,7 +303,7 @@ Execute one fresh live run from a clean environment. Preserve it as a release ca
 - a hashed nflverse history snapshot with the expected completed-season coverage
 - leakage-free historical baselines and passing rolling holdout diagnostics
 - no unexplained exclusions or identity collisions
-- all seven historical stat calibrations pass and each optional Kalshi update/fallback is documented
+- all seven historical stat calibrations pass and each current-market update, override, or fallback is documented
 - source and consensus means pass residual/arithmetic checks
 - scoring coverage is clearly represented
 - workbook read-back passes

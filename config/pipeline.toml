@@ -59,9 +59,9 @@ reject_ambiguous_integer_lines = true
 
 [model]
 family = "negative_binomial"
-dispersion_mode = "historical_with_kalshi_update"
-minimum_calibration_groups = 8
-minimum_thresholds_per_group = 3
+dispersion_mode = "historical_with_current_market_update"
+minimum_calibration_groups = 4
+minimum_thresholds_per_group = 2
 probability_floor = 0.02
 probability_ceiling = 0.98
 robust_loss = "soft_l1"
@@ -96,11 +96,16 @@ receptions = [0.05, 1000.0]
 [model.current_market]
 optimizer_tolerance = 1e-10
 optimizer_max_evaluations = 5000
+max_current_market_logit_rmse = 0.35
+max_current_market_holdout_logit_mae = 0.60
+max_current_market_log_dispersion_delta = 0.50
+current_market_conflict_policy = "warning"
 max_sportsbook_probability_residual = 1e-8
 max_kalshi_logit_rmse = 0.35
 max_kalshi_holdout_logit_mae = 0.60
-max_kalshi_log_dispersion_delta = 1.50
-kalshi_conflict_policy = "warning"
+near_even_probability_band = [0.45, 0.55]
+max_near_even_mean_shift_relative = 0.10
+max_near_even_mean_shift_absolute = 2.0
 
 [model.current_market.mean_bounds]
 passing_yards = [0.01, 10000.0]
