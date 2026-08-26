@@ -107,6 +107,8 @@ receptions = [0.01, 300.0]
 [aggregation]
 minimum_sources = 1
 renormalize_available_source_weights = true
+max_absolute_disagreement = 100.0
+max_relative_disagreement = 0.20
 
 [scoring]
 missing_stat_policy = "blank_total"
