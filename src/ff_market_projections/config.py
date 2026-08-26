@@ -25,7 +25,10 @@ _SCHEMA: dict[str, Any] = {
     "names": {"automatic_fuzzy_match", "minimum_score", "minimum_runner_up_gap"},
     "pricing": {"sportsbook_devig_method", "probability_tolerance", "reject_ambiguous_integer_lines"},
     "model": {"family", "dispersion_mode", "minimum_calibration_groups", "minimum_thresholds_per_group", "probability_floor", "probability_ceiling", "robust_loss", "on_calibration_failure", "bootstrap_samples", "random_seed", "historical_calibration", "current_market"},
-    "aggregation": {"minimum_sources", "renormalize_available_source_weights"},
+    "aggregation": {
+        "minimum_sources", "renormalize_available_source_weights",
+        "max_absolute_disagreement", "max_relative_disagreement",
+    },
     "scoring": {"missing_stat_policy", "passing_yards", "passing_touchdowns", "passing_interceptions", "rushing_yards", "rushing_touchdowns", "receiving_yards", "receiving_touchdowns", "fumbles_lost", "two_point_conversions", "reception_bonus", "required_profiles"},
     "workbook": {"filename", "freeze_header", "autofilter"},
 }
@@ -262,6 +265,17 @@ def _validate(values: dict[str, Any]) -> None:
             or not 0 < stat_bounds[0] < stat_bounds[1]
         ):
             raise ConfigError(f"model.current_market.mean_bounds.{stat} must be [positive_min, larger_max]")
+
+    aggregation = values["aggregation"]
+    for key in _SCHEMA["aggregation"]:
+        _expect(aggregation, key, "aggregation")
+    minimum_sources = aggregation["minimum_sources"]
+    if isinstance(minimum_sources, bool) or not isinstance(minimum_sources, int) or minimum_sources <= 0:
+        raise ConfigError("aggregation.minimum_sources must be a positive integer")
+    if not isinstance(aggregation["renormalize_available_source_weights"], bool):
+        raise ConfigError("aggregation.renormalize_available_source_weights must be boolean")
+    for key in ("max_absolute_disagreement", "max_relative_disagreement"):
+        _positive(aggregation[key], f"aggregation.{key}", allow_zero=True)
 
 
 def load_config(path: str | Path) -> PipelineConfig:
