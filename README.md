@@ -47,6 +47,19 @@ collection failure marks the run failed while retaining its collector logs and a
 successfully collected raw inputs. A successful Phase 1 collection remains `running`:
 later phases are responsible for validation, workbook production, and final completion.
 
+## Phase 9 workbook
+
+After the Phase 2–8 artifacts are present in a run, build and read back the static workbook:
+
+```bash
+python scripts/build_workbook.py --run-dir runs/RUN_ID
+python scripts/validate_workbook.py --run-dir runs/RUN_ID
+```
+
+The workbook contains the eight audit and presentation sheets described in `SPEC.md`.
+The read-back report is written to `artifacts/workbook_validation.json`; Phase 10 owns
+run finalization after that report passes.
+
 The nflverse snapshot is persisted in a content-addressed cache under
 `data/cache/nflverse_player_stats/`; each run receives its own immutable copy in
 `runs/RUN_ID/raw/`. To force a new nflverse download, pass
