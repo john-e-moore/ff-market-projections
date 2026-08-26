@@ -24,7 +24,7 @@ _SCHEMA: dict[str, Any] = {
     },
     "names": {"automatic_fuzzy_match", "minimum_score", "minimum_runner_up_gap"},
     "pricing": {"sportsbook_devig_method", "probability_tolerance", "reject_ambiguous_integer_lines"},
-    "model": {"family", "dispersion_mode", "minimum_calibration_groups", "minimum_thresholds_per_group", "probability_floor", "probability_ceiling", "robust_loss", "on_calibration_failure", "bootstrap_samples", "random_seed", "historical_calibration"},
+    "model": {"family", "dispersion_mode", "minimum_calibration_groups", "minimum_thresholds_per_group", "probability_floor", "probability_ceiling", "robust_loss", "on_calibration_failure", "bootstrap_samples", "random_seed", "historical_calibration", "current_market"},
     "aggregation": {"minimum_sources", "renormalize_available_source_weights"},
     "scoring": {"missing_stat_policy", "passing_yards", "passing_touchdowns", "passing_interceptions", "rushing_yards", "rushing_touchdowns", "receiving_yards", "receiving_touchdowns", "fumbles_lost", "two_point_conversions", "reception_bonus", "required_profiles"},
     "workbook": {"filename", "freeze_header", "autofilter"},
@@ -43,6 +43,12 @@ _HISTORICAL_CALIBRATION_KEYS = {
     "max_interval_coverage_error", "max_abs_relative_bias",
     "max_sensitivity_log_dispersion_delta", "minimum_bootstrap_success_rate",
     "dispersion_bounds",
+}
+_CURRENT_MARKET_KEYS = {
+    "optimizer_tolerance", "optimizer_max_evaluations",
+    "max_sportsbook_probability_residual", "max_kalshi_logit_rmse",
+    "max_kalshi_holdout_logit_mae", "max_kalshi_log_dispersion_delta",
+    "kalshi_conflict_policy", "mean_bounds",
 }
 
 
@@ -163,6 +169,14 @@ def _validate(values: dict[str, Any]) -> None:
     floor, ceiling = _expect(model, "probability_floor", "model"), _expect(model, "probability_ceiling", "model")
     if not (isinstance(floor, (int, float)) and isinstance(ceiling, (int, float)) and 0 < floor < ceiling < 1):
         raise ConfigError("model probability_floor and probability_ceiling must satisfy 0 < floor < ceiling < 1")
+    for key in ("minimum_calibration_groups", "minimum_thresholds_per_group"):
+        value = _expect(model, key, "model")
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ConfigError(f"model.{key} must be a positive integer")
+    if model["minimum_thresholds_per_group"] < 2:
+        raise ConfigError("model.minimum_thresholds_per_group must be at least two")
+    if _expect(model, "robust_loss", "model") != "soft_l1":
+        raise ConfigError("model.robust_loss must be soft_l1")
 
     calibration = _expect(model, "historical_calibration", "model")
     if not isinstance(calibration, dict):
@@ -214,6 +228,40 @@ def _validate(values: dict[str, Any]) -> None:
             or not 0 < stat_bounds[0] < stat_bounds[1]
         ):
             raise ConfigError(f"model.historical_calibration.dispersion_bounds.{stat} must be [positive_min, larger_max]")
+
+    current = _expect(model, "current_market", "model")
+    if not isinstance(current, dict):
+        raise ConfigError("model.current_market must be a TOML table")
+    _assert_keys(current, _CURRENT_MARKET_KEYS, "model.current_market")
+    for key in _CURRENT_MARKET_KEYS:
+        _expect(current, key, "model.current_market")
+    _positive(current["optimizer_tolerance"], "model.current_market.optimizer_tolerance")
+    evaluations = current["optimizer_max_evaluations"]
+    if isinstance(evaluations, bool) or not isinstance(evaluations, int) or evaluations <= 0:
+        raise ConfigError("model.current_market.optimizer_max_evaluations must be a positive integer")
+    for key in (
+        "max_sportsbook_probability_residual", "max_kalshi_logit_rmse",
+        "max_kalshi_holdout_logit_mae", "max_kalshi_log_dispersion_delta",
+    ):
+        _positive(current[key], f"model.current_market.{key}", allow_zero=True)
+    if current["max_sportsbook_probability_residual"] >= 1:
+        raise ConfigError("model.current_market.max_sportsbook_probability_residual must be less than one")
+    if current["kalshi_conflict_policy"] not in {"warning", "fail"}:
+        raise ConfigError("model.current_market.kalshi_conflict_policy must be warning or fail")
+    mean_bounds = current["mean_bounds"]
+    if not isinstance(mean_bounds, dict):
+        raise ConfigError("model.current_market.mean_bounds must be a TOML table")
+    _assert_keys(mean_bounds, set(_TARGET_STATS), "model.current_market.mean_bounds")
+    missing_mean_bounds = sorted(_TARGET_STATS - set(mean_bounds))
+    if missing_mean_bounds:
+        raise ConfigError(f"Missing mean bound(s) for: {', '.join(missing_mean_bounds)}")
+    for stat, stat_bounds in mean_bounds.items():
+        if (
+            not isinstance(stat_bounds, list) or len(stat_bounds) != 2
+            or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in stat_bounds)
+            or not 0 < stat_bounds[0] < stat_bounds[1]
+        ):
+            raise ConfigError(f"model.current_market.mean_bounds.{stat} must be [positive_min, larger_max]")
 
 
 def load_config(path: str | Path) -> PipelineConfig:

@@ -86,6 +86,24 @@ receiving_yards = [0.05, 1000.0]
 receiving_touchdowns = [0.05, 1000.0]
 receptions = [0.05, 1000.0]
 
+[model.current_market]
+optimizer_tolerance = 1e-10
+optimizer_max_evaluations = 5000
+max_sportsbook_probability_residual = 1e-8
+max_kalshi_logit_rmse = 0.35
+max_kalshi_holdout_logit_mae = 0.60
+max_kalshi_log_dispersion_delta = 1.50
+kalshi_conflict_policy = "warning"
+
+[model.current_market.mean_bounds]
+passing_yards = [0.01, 10000.0]
+passing_touchdowns = [0.01, 100.0]
+rushing_yards = [0.01, 5000.0]
+rushing_touchdowns = [0.01, 50.0]
+receiving_yards = [0.01, 5000.0]
+receiving_touchdowns = [0.01, 50.0]
+receptions = [0.01, 300.0]
+
 [aggregation]
 minimum_sources = 1
 renormalize_available_source_weights = true
