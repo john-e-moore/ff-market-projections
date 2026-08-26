@@ -182,6 +182,23 @@ def test_historical_only_fallback_is_exact_and_single_quote_mean_is_reproducible
     assert quote["probability_residual"] == pytest.approx(0.0, abs=1e-9)
 
 
+def test_groups_below_minimum_threshold_count_cannot_update_dispersion() -> None:
+    markets, _ = _kalshi_curves()
+    markets = markets.groupby("canonical_player_id", sort=False).head(2).reset_index(drop=True)
+    config = _config()
+    # This test isolates update eligibility from the deliberately misspecified
+    # historical-dispersion source residuals produced by the two-point curves.
+    config["current_market"]["max_kalshi_logit_rmse"] = 2.0
+    config["current_market"]["max_kalshi_holdout_logit_mae"] = 2.0
+    result = estimate_market_means(markets, _dispersions(), _historical_report(), config)
+    receiving = result.dispersions.set_index("stat").loc["receiving_yards"]
+    assert result.validation["status"] == "passed"
+    assert receiving["method"] == "historical_only"
+    assert receiving["final_dispersion"] == receiving["historical_dispersion"]
+    assert receiving["kalshi_group_count"] == 0
+    assert receiving["fallback_reason"] == "insufficient_eligible_kalshi_groups"
+
+
 def test_excluded_quotes_never_contribute_and_remain_auditable() -> None:
     historical = 9.0
     probability = float(negative_binomial_survival(801, 875.0, historical))
