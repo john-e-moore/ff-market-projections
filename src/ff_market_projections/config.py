@@ -119,7 +119,11 @@ def _validate(values: dict[str, Any]) -> None:
             raise ConfigError(f"sources.{name} must be a TOML table")
         _assert_keys(source, set(_SCHEMA["sources"][name]), f"sources.{name}")
         _expect(source, "enabled", f"sources.{name}")
-        _positive(_expect(source, "weight", f"sources.{name}"), f"sources.{name}.weight")
+        _positive(
+            _expect(source, "weight", f"sources.{name}"),
+            f"sources.{name}.weight",
+            allow_zero=True,
+        )
 
     historical = values["historical"]
     for key in _SCHEMA["historical"]:

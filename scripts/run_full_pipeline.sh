@@ -1,60 +1,79 @@
 #!/usr/bin/env bash
-# Run the implemented Phase 1–9 pipeline stages for one fresh, immutable run.
+# Run every implemented pipeline stage for one new, immutable run directory.
+# Extra arguments are forwarded to run_pipeline.py (for example,
+# --offline-input-dir tests/fixtures/phase1).
 
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-python_bin="${PYTHON:-$repo_root/.venv/bin/python}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
-if [[ ! -x "$python_bin" ]]; then
-  echo "Python executable is unavailable: $python_bin" >&2
-  echo "Set PYTHON to a Python 3.11+ environment with the project installed." >&2
+if [[ "$(git branch --show-current)" != "main" ]]; then
+  printf 'Refusing to run: expected the main branch, found %s.\n' "$(git branch --show-current)" >&2
   exit 2
 fi
 
-summary_file="$(mktemp)"
-trap 'rm -f "$summary_file"' EXIT
-
-run_stage() {
-  local script="$1"
-  shift
-  printf '\n==> %s\n' "$script"
-  "$python_bin" "$repo_root/scripts/$script" "$@"
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  PYTHON_BIN="$PYTHON_BIN"
+elif [[ -x .venv/bin/python ]]; then
+  PYTHON_BIN=.venv/bin/python
+else
+  PYTHON_BIN=python3
+fi
+"$PYTHON_BIN" -c 'import ff_market_projections' || {
+  printf 'The project package is not installed for %s. Install the project dependencies first.\n' "$PYTHON_BIN" >&2
+  exit 2
 }
 
-printf '==> run_pipeline.py\n'
-"$python_bin" "$repo_root/scripts/run_pipeline.py" "$@" | tee "$summary_file"
+run_stage() {
+  current_stage="$1"
+  shift
+  printf '\n==> %s\n' "$current_stage"
+  "$@"
+}
 
-run_dir="$($python_bin -c '
-import json
-import pathlib
-import sys
+printf '==> collect_inputs\n'
+set +e
+collection_output="$("$PYTHON_BIN" scripts/run_pipeline.py "$@" 2>&1)"
+collection_status=$?
+set -e
+printf '%s\n' "$collection_output"
 
-lines = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
-try:
-    summary = json.loads(lines[-1])
-    path = pathlib.Path(summary["run_dir"])
-except (IndexError, KeyError, json.JSONDecodeError) as exc:
-    raise SystemExit(f"Could not determine run directory from collection summary: {exc}")
-if summary.get("state") != "running" or summary.get("collection_state") != "succeeded":
-    raise SystemExit(f"Collection did not succeed: {summary}")
-print(path)
-' "$summary_file")"
+run_dir="$("$PYTHON_BIN" -c '
+import json, sys
+for line in reversed(sys.stdin.read().splitlines()):
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if "run_dir" in payload:
+        print(payload["run_dir"])
+        break
+else:
+    raise SystemExit("Could not locate run_dir in collection output")
+' <<<"$collection_output")"
+
+if [[ $collection_status -ne 0 ]]; then
+  printf 'Pipeline stopped during collection. Run directory: %s\n' "$run_dir" >&2
+  exit "$collection_status"
+fi
+
 config="$run_dir/config/effective.toml"
+current_stage=""
+trap 'status=$?; printf "Pipeline stopped during %s. Run directory: %s\\n" "$current_stage" "$run_dir" >&2; exit "$status"' ERR
 
-run_stage prepare_historical_stats.py --run-dir "$run_dir" --config "$config" --input "$run_dir/raw/nflverse_player_stats.csv.gz"
-run_stage validate_collections.py --run-dir "$run_dir" --config "$config"
-run_stage normalize_markets.py --run-dir "$run_dir" --config "$config"
-run_stage reconcile_players.py --run-dir "$run_dir"
-run_stage price_markets.py --run-dir "$run_dir"
-run_stage calibrate_distributions.py --run-dir "$run_dir"
-run_stage estimate_means.py --run-dir "$run_dir"
-run_stage aggregate_consensus.py --run-dir "$run_dir"
-run_stage score_fantasy.py --run-dir "$run_dir"
-run_stage build_workbook.py --run-dir "$run_dir"
-run_stage validate_workbook.py --run-dir "$run_dir"
+run_stage validate_collections "$PYTHON_BIN" scripts/validate_collections.py --run-dir "$run_dir" --config "$config"
+run_stage prepare_historical_stats "$PYTHON_BIN" scripts/prepare_historical_stats.py --run-dir "$run_dir" --config "$config" --input "$run_dir/raw/nflverse_player_stats.csv.gz"
+run_stage normalize_markets "$PYTHON_BIN" scripts/normalize_markets.py --run-dir "$run_dir" --config "$config"
+run_stage reconcile_players "$PYTHON_BIN" scripts/reconcile_players.py --run-dir "$run_dir"
+run_stage price_markets "$PYTHON_BIN" scripts/price_markets.py --run-dir "$run_dir"
+run_stage calibrate_distributions "$PYTHON_BIN" scripts/calibrate_distributions.py --run-dir "$run_dir"
+run_stage estimate_means "$PYTHON_BIN" scripts/estimate_means.py --run-dir "$run_dir"
+run_stage aggregate_consensus "$PYTHON_BIN" scripts/aggregate_consensus.py --run-dir "$run_dir"
+run_stage score_fantasy "$PYTHON_BIN" scripts/score_fantasy.py --run-dir "$run_dir"
+run_stage build_workbook "$PYTHON_BIN" scripts/build_workbook.py --run-dir "$run_dir"
+run_stage validate_workbook "$PYTHON_BIN" scripts/validate_workbook.py --run-dir "$run_dir"
 
-printf '\nFull Phase 1–9 pipeline succeeded.\n'
-printf 'Run directory: %s\n' "$run_dir"
-printf 'Player projections: %s\n' "$run_dir/artifacts/fantasy_projections.csv"
-printf 'Workbook: %s\n' "$run_dir/output/fantasy_football_projections.xlsx"
+workbook="$run_dir/output/fantasy_football_projections.xlsx"
+printf '\nPipeline stages passed. Workbook: %s\n' "$workbook"
+printf 'Note: final run completion metadata is not updated because Phase 10 finalization is not yet implemented.\n'

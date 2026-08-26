@@ -1,0 +1,872 @@
+{
+  "summary": {
+    "run_id": "20260826T152136Z-829c0109",
+    "source_skew_seconds": 5.218714,
+    "eligible_source_curves": {
+      "draftkings": 294,
+      "fanduel": 136,
+      "kalshi": 158
+    },
+    "published_consensus_rows": 356,
+    "single_source_consensus_rows": 166,
+    "single_source_consensus_rate": 0.46629213483146065,
+    "kalshi_disagreement_rows": 70,
+    "kalshi_disagreement_rate": 0.4430379746835443,
+    "non_kalshi_disagreement_rows": 10,
+    "non_kalshi_disagreement_rate": 0.050505050505050504,
+    "kalshi_raw_quotes": 1129,
+    "kalshi_pricing_eligible_quotes": 336,
+    "kalshi_contributing_quotes": 187,
+    "kalshi_eligible_curves": 158,
+    "kalshi_curves_no_24h_volume": 135,
+    "kalshi_curves_zero_lifetime_volume": 32,
+    "kalshi_curves_min_oi_le_10": 48,
+    "kalshi_curves_max_spread_gt_10c": 109,
+    "kalshi_single_eligible_threshold_curves": 133,
+    "kalshi_only_consensus_rows": 53,
+    "kalshi_only_zero_24h_volume": 47,
+    "kalshi_dispersion_updates": 0,
+    "quarantined_kalshi_curves": 57,
+    "fantasy_rows": 171,
+    "fantasy_blank_names": 171,
+    "fantasy_numeric_scores": 91,
+    "fantasy_complete_rows": 0,
+    "identity_unmatched": 77,
+    "model_warnings": 12,
+    "model_errors": 0
+  },
+  "pair_summary": [
+    {
+      "pair": "DraftKings vs FanDuel",
+      "overlap": 127,
+      "correlation": 0.9990481791005059,
+      "median_abs_difference": 0.02629679446225332,
+      "mean_signed_difference": -0.008981482904135446
+    },
+    {
+      "pair": "DraftKings vs Kalshi",
+      "overlap": 100,
+      "correlation": 0.9849957190872026,
+      "median_abs_difference": 0.240212101001277,
+      "mean_signed_difference": -0.13257682844078697
+    },
+    {
+      "pair": "FanDuel vs Kalshi",
+      "overlap": 47,
+      "correlation": 0.9811379671871056,
+      "median_abs_difference": 0.31014694822228817,
+      "mean_signed_difference": -0.1585006717991182
+    }
+  ],
+  "pair_by_stat": [
+    {
+      "pair": "DraftKings vs FanDuel",
+      "stat": "Passing Touchdowns",
+      "comparison": "DK vs FD \u00b7 Passing Touchdowns",
+      "overlap": 21,
+      "median_abs_difference": 0.027333300789567867,
+      "median_right_to_left_ratio": 0.9877683851462554
+    },
+    {
+      "pair": "DraftKings vs FanDuel",
+      "stat": "Passing Yards",
+      "comparison": "DK vs FD \u00b7 Passing Yards",
+      "overlap": 21,
+      "median_abs_difference": 0.02444392947640358,
+      "median_right_to_left_ratio": 0.9849214865494088
+    },
+    {
+      "pair": "DraftKings vs FanDuel",
+      "stat": "Receiving Yards",
+      "comparison": "DK vs FD \u00b7 Receiving Yards",
+      "overlap": 40,
+      "median_abs_difference": 0.0242998907908706,
+      "median_right_to_left_ratio": 1.0008516968536716
+    },
+    {
+      "pair": "DraftKings vs FanDuel",
+      "stat": "Rushing Touchdowns",
+      "comparison": "DK vs FD \u00b7 Rushing Touchdowns",
+      "overlap": 20,
+      "median_abs_difference": 0.0678604737469409,
+      "median_right_to_left_ratio": 1.011161885679076
+    },
+    {
+      "pair": "DraftKings vs FanDuel",
+      "stat": "Rushing Yards",
+      "comparison": "DK vs FD \u00b7 Rushing Yards",
+      "overlap": 25,
+      "median_abs_difference": 0.025866078427367004,
+      "median_right_to_left_ratio": 0.976088915225835
+    },
+    {
+      "pair": "DraftKings vs Kalshi",
+      "stat": "Passing Touchdowns",
+      "comparison": "DK vs Kalshi \u00b7 Passing Touchdowns",
+      "overlap": 1,
+      "median_abs_difference": 0.2929464794563817,
+      "median_right_to_left_ratio": 0.7444803164129375
+    },
+    {
+      "pair": "DraftKings vs Kalshi",
+      "stat": "Passing Yards",
+      "comparison": "DK vs Kalshi \u00b7 Passing Yards",
+      "overlap": 5,
+      "median_abs_difference": 0.3469444048726126,
+      "median_right_to_left_ratio": 0.7043437380516527
+    },
+    {
+      "pair": "DraftKings vs Kalshi",
+      "stat": "Receiving Touchdowns",
+      "comparison": "DK vs Kalshi \u00b7 Receiving Touchdowns",
+      "overlap": 20,
+      "median_abs_difference": 0.14346026362886166,
+      "median_right_to_left_ratio": 0.866178209369739
+    },
+    {
+      "pair": "DraftKings vs Kalshi",
+      "stat": "Receiving Yards",
+      "comparison": "DK vs Kalshi \u00b7 Receiving Yards",
+      "overlap": 25,
+      "median_abs_difference": 0.15333732863340038,
+      "median_right_to_left_ratio": 0.8663517649800859
+    },
+    {
+      "pair": "DraftKings vs Kalshi",
+      "stat": "Receptions",
+      "comparison": "DK vs Kalshi \u00b7 Receptions",
+      "overlap": 17,
+      "median_abs_difference": 0.28678072601825394,
+      "median_right_to_left_ratio": 0.7491838874139918
+    },
+    {
+      "pair": "DraftKings vs Kalshi",
+      "stat": "Rushing Touchdowns",
+      "comparison": "DK vs Kalshi \u00b7 Rushing Touchdowns",
+      "overlap": 15,
+      "median_abs_difference": 0.2807621982716703,
+      "median_right_to_left_ratio": 1.1426536347245102
+    },
+    {
+      "pair": "DraftKings vs Kalshi",
+      "stat": "Rushing Yards",
+      "comparison": "DK vs Kalshi \u00b7 Rushing Yards",
+      "overlap": 17,
+      "median_abs_difference": 0.3692923178297664,
+      "median_right_to_left_ratio": 0.6882678299754652
+    },
+    {
+      "pair": "FanDuel vs Kalshi",
+      "stat": "Passing Touchdowns",
+      "comparison": "FD vs Kalshi \u00b7 Passing Touchdowns",
+      "overlap": 1,
+      "median_abs_difference": 0.2724850741262639,
+      "median_right_to_left_ratio": 0.7601875785863805
+    },
+    {
+      "pair": "FanDuel vs Kalshi",
+      "stat": "Passing Yards",
+      "comparison": "FD vs Kalshi \u00b7 Passing Yards",
+      "overlap": 4,
+      "median_abs_difference": 0.4164482955532013,
+      "median_right_to_left_ratio": 0.6575260115041439
+    },
+    {
+      "pair": "FanDuel vs Kalshi",
+      "stat": "Receiving Yards",
+      "comparison": "FD vs Kalshi \u00b7 Receiving Yards",
+      "overlap": 15,
+      "median_abs_difference": 0.1683813494234105,
+      "median_right_to_left_ratio": 0.8446939700268272
+    },
+    {
+      "pair": "FanDuel vs Kalshi",
+      "stat": "Rushing Touchdowns",
+      "comparison": "FD vs Kalshi \u00b7 Rushing Touchdowns",
+      "overlap": 12,
+      "median_abs_difference": 0.2049175679723006,
+      "median_right_to_left_ratio": 1.1125240387596622
+    },
+    {
+      "pair": "FanDuel vs Kalshi",
+      "stat": "Rushing Yards",
+      "comparison": "FD vs Kalshi \u00b7 Rushing Yards",
+      "overlap": 15,
+      "median_abs_difference": 0.38273903394087466,
+      "median_right_to_left_ratio": 0.6787402829357669
+    }
+  ],
+  "kalshi_funnel": [
+    {
+      "stage": "Raw Kalshi contracts",
+      "count": 1129
+    },
+    {
+      "stage": "Two-sided and spread-eligible",
+      "count": 336
+    },
+    {
+      "stage": "Quotes on curves used",
+      "count": 187
+    },
+    {
+      "stage": "Eligible player/stat curves",
+      "count": 158
+    },
+    {
+      "stage": "Stats with Kalshi dispersion update",
+      "count": 0
+    }
+  ],
+  "triple_outliers": [
+    {
+      "canonical_player_name": "James Cook",
+      "stat_label": "Rushing Touchdowns",
+      "draftkings_mean": 12.1569194739,
+      "fanduel_mean": 12.184584908,
+      "kalshi_mean": 21.8931029163,
+      "kalshi_vs_books": 0.7988290758708735,
+      "consensus_vs_books": 0.2662763586263633,
+      "contributing_quotes": 1,
+      "total_volume": 119.72,
+      "minimum_open_interest": 119.72,
+      "volume_24h": 0.0,
+      "median_spread": 0.08,
+      "minimum_top_size": 5.29
+    },
+    {
+      "canonical_player_name": "Jahmyr Gibbs",
+      "stat_label": "Rushing Touchdowns",
+      "draftkings_mean": 15.1548171147,
+      "fanduel_mean": 16.2724865312,
+      "kalshi_mean": 25.1622686574,
+      "kalshi_vs_books": 0.6012998722964047,
+      "consensus_vs_books": 0.20043329076758956,
+      "contributing_quotes": 1,
+      "total_volume": 29.93,
+      "minimum_open_interest": 29.93,
+      "volume_24h": 0.82,
+      "median_spread": 0.09,
+      "minimum_top_size": 4.18
+    },
+    {
+      "canonical_player_name": "Travis Kelce",
+      "stat_label": "Receiving Yards",
+      "draftkings_mean": 851.584200823,
+      "fanduel_mean": 852.846445092,
+      "kalshi_mean": 498.675854024,
+      "kalshi_vs_books": -0.414847585357405,
+      "consensus_vs_books": -0.13828252845246827,
+      "contributing_quotes": 1,
+      "total_volume": 455.35,
+      "minimum_open_interest": 455.35,
+      "volume_24h": 0.0,
+      "median_spread": 0.18,
+      "minimum_top_size": 5.0
+    },
+    {
+      "canonical_player_name": "Christian McCaffrey",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 1220.71614166,
+      "fanduel_mean": 1157.73021769,
+      "kalshi_mean": 696.66475483,
+      "kalshi_vs_books": -0.41418501864352336,
+      "consensus_vs_books": -0.13806167288117446,
+      "contributing_quotes": 1,
+      "total_volume": 0.0,
+      "minimum_open_interest": 0.0,
+      "volume_24h": 0.0,
+      "median_spread": 0.11,
+      "minimum_top_size": 200.0
+    },
+    {
+      "canonical_player_name": "Devon Achane",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 1252.85181727,
+      "fanduel_mean": 1254.1372443,
+      "kalshi_mean": 736.299894631,
+      "kalshi_vs_books": -0.4126022279731107,
+      "consensus_vs_books": -0.13753407599396217,
+      "contributing_quotes": 1,
+      "total_volume": 54.44,
+      "minimum_open_interest": 54.44,
+      "volume_24h": 0.0,
+      "median_spread": 0.08,
+      "minimum_top_size": 10.0
+    },
+    {
+      "canonical_player_name": "Kyren Williams",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 1220.71614166,
+      "fanduel_mean": 1189.86589315,
+      "kalshi_mean": 710.014441502,
+      "kalshi_vs_books": -0.41091866507835917,
+      "consensus_vs_books": -0.13697288835724042,
+      "contributing_quotes": 1,
+      "total_volume": 0.0,
+      "minimum_open_interest": 0.0,
+      "volume_24h": 0.0,
+      "median_spread": 0.1,
+      "minimum_top_size": 600.0
+    },
+    {
+      "canonical_player_name": "Omarion Hampton",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 1220.71614166,
+      "fanduel_mean": 1189.86589315,
+      "kalshi_mean": 718.923718842,
+      "kalshi_vs_books": -0.40352685910673436,
+      "consensus_vs_books": -0.13450895303613103,
+      "contributing_quotes": 2,
+      "total_volume": 1100.97,
+      "minimum_open_interest": 307.61,
+      "volume_24h": 0.0,
+      "median_spread": 0.095,
+      "minimum_top_size": 5.0
+    },
+    {
+      "canonical_player_name": "Jaxson Dart",
+      "stat_label": "Passing Yards",
+      "draftkings_mean": 4027.20815877,
+      "fanduel_mean": 4068.42842801,
+      "kalshi_mean": 2429.1939527,
+      "kalshi_vs_books": -0.39987574129332304,
+      "consensus_vs_books": -0.13329191376526445,
+      "contributing_quotes": 2,
+      "total_volume": 294.88,
+      "minimum_open_interest": 0.0,
+      "volume_24h": 213.6,
+      "median_spread": 0.145,
+      "minimum_top_size": 5.0
+    },
+    {
+      "canonical_player_name": "Jeremiyah Love",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 995.766414907,
+      "fanduel_mean": 997.051841902,
+      "kalshi_mean": 641.352253757,
+      "kalshi_vs_books": -0.35633643302328516,
+      "consensus_vs_books": -0.11877881100809626,
+      "contributing_quotes": 1,
+      "total_volume": 30.0,
+      "minimum_open_interest": 30.0,
+      "volume_24h": 0.0,
+      "median_spread": 0.09,
+      "minimum_top_size": 150.0
+    },
+    {
+      "canonical_player_name": "Travis Etienne",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 1060.03776488,
+      "fanduel_mean": 1125.59454233,
+      "kalshi_mean": 729.589892126,
+      "kalshi_vs_books": -0.33237636566844586,
+      "consensus_vs_books": -0.11079212188948188,
+      "contributing_quotes": 1,
+      "total_volume": 328.75,
+      "minimum_open_interest": 328.75,
+      "volume_24h": 0.0,
+      "median_spread": 0.09,
+      "minimum_top_size": 5.0
+    },
+    {
+      "canonical_player_name": "Jahmyr Gibbs",
+      "stat_label": "Receiving Yards",
+      "draftkings_mean": 567.57925257,
+      "fanduel_mean": 600.397600349,
+      "kalshi_mean": 392.877662086,
+      "kalshi_vs_books": -0.3272509449067887,
+      "consensus_vs_books": -0.10908364830226289,
+      "contributing_quotes": 1,
+      "total_volume": 530.69,
+      "minimum_open_interest": 530.69,
+      "volume_24h": 0.0,
+      "median_spread": 0.17,
+      "minimum_top_size": 20.0
+    },
+    {
+      "canonical_player_name": "Josh Allen",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 642.27400438,
+      "fanduel_mean": 643.559431255,
+      "kalshi_mean": 436.809710456,
+      "kalshi_vs_books": -0.32058119138847174,
+      "consensus_vs_books": -0.10686039713000907,
+      "contributing_quotes": 1,
+      "total_volume": 1.0,
+      "minimum_open_interest": 1.0,
+      "volume_24h": 0.0,
+      "median_spread": 0.12,
+      "minimum_top_size": 30.0
+    },
+    {
+      "canonical_player_name": "Bijan Robinson",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 1509.93722418,
+      "fanduel_mean": 1479.08697516,
+      "kalshi_mean": 1027.01266787,
+      "kalshi_vs_books": -0.31281073729896697,
+      "consensus_vs_books": -0.10427024576409197,
+      "contributing_quotes": 1,
+      "total_volume": 719.6,
+      "minimum_open_interest": 714.6,
+      "volume_24h": 420.0,
+      "median_spread": 0.11,
+      "minimum_top_size": 90.0
+    },
+    {
+      "canonical_player_name": "James Cook",
+      "stat_label": "Rushing Yards",
+      "draftkings_mean": 1574.20857641,
+      "fanduel_mean": 1511.22265122,
+      "kalshi_mean": 1065.81692078,
+      "kalshi_vs_books": -0.3091293617335417,
+      "consensus_vs_books": -0.1030431205800079,
+      "contributing_quotes": 1,
+      "total_volume": 0.0,
+      "minimum_open_interest": 0.0,
+      "volume_24h": 0.0,
+      "median_spread": 0.14,
+      "minimum_top_size": 5.0
+    },
+    {
+      "canonical_player_name": "George Kittle",
+      "stat_label": "Receiving Yards",
+      "draftkings_mean": 883.140307679,
+      "fanduel_mean": 884.402551957,
+      "kalshi_mean": 620.125167261,
+      "kalshi_vs_books": -0.29831951301174575,
+      "consensus_vs_books": -0.09943983767058195,
+      "contributing_quotes": 1,
+      "total_volume": 291.8,
+      "minimum_open_interest": 291.8,
+      "volume_24h": 0.0,
+      "median_spread": 0.01,
+      "minimum_top_size": 58.0
+    }
+  ],
+  "triple_by_stat": [
+    {
+      "stat_label": "Passing Touchdowns",
+      "overlaps": 1,
+      "median_kalshi_vs_books": -0.2477480367328101,
+      "median_abs_kalshi_vs_books": 0.2477480367328101,
+      "median_consensus_shift": -0.08258267891008499,
+      "disagreement_flags": true
+    },
+    {
+      "stat_label": "Passing Yards",
+      "overlaps": 3,
+      "median_kalshi_vs_books": -0.2889094250170809,
+      "median_abs_kalshi_vs_books": 0.2889094250170809,
+      "median_consensus_shift": -0.09630314167301791,
+      "disagreement_flags": 3
+    },
+    {
+      "stat_label": "Receiving Yards",
+      "overlaps": 13,
+      "median_kalshi_vs_books": -0.1441701368690224,
+      "median_abs_kalshi_vs_books": 0.1441701368690224,
+      "median_consensus_shift": -0.04805671228689472,
+      "disagreement_flags": 9
+    },
+    {
+      "stat_label": "Rushing Touchdowns",
+      "overlaps": 11,
+      "median_kalshi_vs_books": 0.1378980756590213,
+      "median_abs_kalshi_vs_books": 0.26237014318822033,
+      "median_consensus_shift": 0.04596602521934307,
+      "disagreement_flags": 8
+    },
+    {
+      "stat_label": "Rushing Yards",
+      "overlaps": 14,
+      "median_kalshi_vs_books": -0.3166959643437194,
+      "median_abs_kalshi_vs_books": 0.3166959643437194,
+      "median_consensus_shift": -0.10556532144705053,
+      "disagreement_flags": 14
+    }
+  ],
+  "liquidity_correlations": {
+    "total_volume": {
+      "rho": -0.4737012786110014,
+      "p_value": 0.001531103077856854,
+      "n": 42
+    },
+    "minimum_open_interest": {
+      "rho": -0.4770904172019016,
+      "p_value": 0.0014003332018352656,
+      "n": 42
+    },
+    "volume_24h": {
+      "rho": -0.15094896006924724,
+      "p_value": 0.33997167798804806,
+      "n": 42
+    },
+    "median_spread": {
+      "rho": 0.06473756342964417,
+      "p_value": 0.6837775643948516,
+      "n": 42
+    }
+  },
+  "book_line_ratios": [
+    {
+      "source": "Draftkings",
+      "stat": "Passing Touchdowns",
+      "quotes": 28,
+      "median_mean_to_threshold": 1.1662299634809317,
+      "median_overround": 1.04707884288
+    },
+    {
+      "source": "Draftkings",
+      "stat": "Passing Yards",
+      "quotes": 28,
+      "median_mean_to_threshold": 1.3119807480588286,
+      "median_overround": 1.04761904762
+    },
+    {
+      "source": "Draftkings",
+      "stat": "Receiving Touchdowns",
+      "quotes": 55,
+      "median_mean_to_threshold": 1.0637330291603717,
+      "median_overround": 1.05555555556
+    },
+    {
+      "source": "Draftkings",
+      "stat": "Receiving Yards",
+      "quotes": 70,
+      "median_mean_to_threshold": 1.2616885538467242,
+      "median_overround": 1.04761904762
+    },
+    {
+      "source": "Draftkings",
+      "stat": "Receptions",
+      "quotes": 43,
+      "median_mean_to_threshold": 1.1902550350087577,
+      "median_overround": 1.05869324474
+    },
+    {
+      "source": "Draftkings",
+      "stat": "Rushing Touchdowns",
+      "quotes": 33,
+      "median_mean_to_threshold": 1.1850199828743455,
+      "median_overround": 1.05555555556
+    },
+    {
+      "source": "Draftkings",
+      "stat": "Rushing Yards",
+      "quotes": 37,
+      "median_mean_to_threshold": 1.284877612289321,
+      "median_overround": 1.04761904762
+    },
+    {
+      "source": "Fanduel",
+      "stat": "Passing Touchdowns",
+      "quotes": 23,
+      "median_mean_to_threshold": 1.1409137094822677,
+      "median_overround": 1.06896551724
+    },
+    {
+      "source": "Fanduel",
+      "stat": "Passing Yards",
+      "quotes": 23,
+      "median_mean_to_threshold": 1.3119896215751574,
+      "median_overround": 1.06542056075
+    },
+    {
+      "source": "Fanduel",
+      "stat": "Receiving Yards",
+      "quotes": 43,
+      "median_mean_to_threshold": 1.261766273080772,
+      "median_overround": 1.06542056075
+    },
+    {
+      "source": "Fanduel",
+      "stat": "Rushing Touchdowns",
+      "quotes": 21,
+      "median_mean_to_threshold": 1.2456956044191905,
+      "median_overround": 1.06878031878
+    },
+    {
+      "source": "Fanduel",
+      "stat": "Rushing Yards",
+      "quotes": 26,
+      "median_mean_to_threshold": 1.28493223747753,
+      "median_overround": 1.06542056075
+    }
+  ],
+  "model_warning_rows": [
+    {
+      "check": "passing_yards.kalshi_curve_residual",
+      "message": "Kalshi MAP curve logit RMSE is within tolerance",
+      "details": "{\"maximum\": 0.35, \"observed\": 0.6839200247260886}"
+    },
+    {
+      "check": "passing_yards.kalshi_threshold_holdout",
+      "message": "Leave-one-threshold-out Kalshi logit MAE is within tolerance",
+      "details": "{\"failed_fits\": 0, \"maximum\": 0.6, \"observed\": 0.8617455491842384, \"predictions\": 29}"
+    },
+    {
+      "check": "passing_yards.kalshi_historical_conflict",
+      "message": "Kalshi-only and historical log dispersions are within the configured conflict threshold",
+      "details": "{\"historical_dispersion\": 1.32161137507, \"kalshi_only_dispersion\": 19.774466448081537, \"maximum\": 1.5, \"observed\": 2.7055398013640155}"
+    },
+    {
+      "check": "passing_touchdowns.kalshi_calibration_groups",
+      "message": "Eligible multi-threshold Kalshi groups meet the configured update minimum",
+      "details": "{\"minimum\": 8, \"minimum_thresholds_per_group\": 3, \"observed\": 0}"
+    },
+    {
+      "check": "rushing_yards.kalshi_calibration_groups",
+      "message": "Eligible multi-threshold Kalshi groups meet the configured update minimum",
+      "details": "{\"minimum\": 8, \"minimum_thresholds_per_group\": 3, \"observed\": 4}"
+    },
+    {
+      "check": "rushing_touchdowns.kalshi_calibration_groups",
+      "message": "Eligible multi-threshold Kalshi groups meet the configured update minimum",
+      "details": "{\"minimum\": 8, \"minimum_thresholds_per_group\": 3, \"observed\": 4}"
+    },
+    {
+      "check": "receiving_yards.kalshi_curve_residual",
+      "message": "Kalshi MAP curve logit RMSE is within tolerance",
+      "details": "{\"maximum\": 0.35, \"observed\": 0.6546399259845338}"
+    },
+    {
+      "check": "receiving_yards.kalshi_threshold_holdout",
+      "message": "Leave-one-threshold-out Kalshi logit MAE is within tolerance",
+      "details": "{\"failed_fits\": 0, \"maximum\": 0.6, \"observed\": 0.8507799675272592, \"predictions\": 37}"
+    },
+    {
+      "check": "receiving_yards.kalshi_historical_conflict",
+      "message": "Kalshi-only and historical log dispersions are within the configured conflict threshold",
+      "details": "{\"historical_dispersion\": 1.52752096539, \"kalshi_only_dispersion\": 7.70199028980674, \"maximum\": 1.5, \"observed\": 1.6178326373896688}"
+    },
+    {
+      "check": "receiving_touchdowns.kalshi_calibration_groups",
+      "message": "Eligible multi-threshold Kalshi groups meet the configured update minimum",
+      "details": "{\"minimum\": 8, \"minimum_thresholds_per_group\": 3, \"observed\": 3}"
+    },
+    {
+      "check": "receptions.kalshi_calibration_groups",
+      "message": "Eligible multi-threshold Kalshi groups meet the configured update minimum",
+      "details": "{\"minimum\": 8, \"minimum_thresholds_per_group\": 3, \"observed\": 0}"
+    },
+    {
+      "check": "kalshi_curves_quarantined",
+      "message": "Kalshi curves that fail residual or holdout limits are excluded from downstream consensus",
+      "details": "{\"by_reason\": {\"kalshi_curve_holdout_exceeds_limit\": 51, \"kalshi_curve_residual_exceeds_limit\": 51}, \"by_stat\": {\"passing_yards\": 18, \"receiving_touchdowns\": 2, \"receiving_yards\": 25, \"rushing_touchdowns\": 5, \"rushing_yards\": 7}, \"curves\": 57}"
+    }
+  ],
+  "top_scores": [
+    {
+      "canonical_player_name": "Josh Allen",
+      "canonical_position": "QB",
+      "scoring_profile": "passing|rushing",
+      "fpts_standard": 450.196316384,
+      "fpts_full_ppr": 450.196316384,
+      "passing_yards": 4740.23289161,
+      "passing_touchdowns": 29.5336522348,
+      "rushing_yards": 574.21438203,
+      "rushing_touchdowns": 14.1718255963,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Drake Maye",
+      "canonical_position": "QB",
+      "scoring_profile": "passing|rushing",
+      "fpts_standard": 413.174182592,
+      "fpts_full_ppr": 413.174182592,
+      "passing_yards": 5089.67980141,
+      "passing_touchdowns": 32.3031988093,
+      "rushing_yards": 530.441870147,
+      "rushing_touchdowns": 4.55500138054,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Jalen Hurts",
+      "canonical_position": "QB",
+      "scoring_profile": "passing|rushing",
+      "fpts_standard": 391.729677959,
+      "fpts_full_ppr": 391.729677959,
+      "passing_yards": 4198.9841782,
+      "passing_touchdowns": 26.6400119126,
+      "rushing_yards": 530.441870147,
+      "rushing_touchdowns": 10.6943460276,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Lamar Jackson",
+      "canonical_position": "QB",
+      "scoring_profile": "passing|rushing",
+      "fpts_standard": 378.674179117,
+      "fpts_full_ppr": 378.674179117,
+      "passing_yards": 4231.78713052,
+      "passing_touchdowns": 28.4253685343,
+      "rushing_yards": 683.680166301,
+      "rushing_touchdowns": 4.55553385475,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Jayden Daniels",
+      "canonical_position": "QB",
+      "scoring_profile": "passing|rushing",
+      "fpts_standard": 372.052702393,
+      "fpts_full_ppr": 372.052702393,
+      "passing_yards": 4133.37827358,
+      "passing_touchdowns": 24.7390594661,
+      "rushing_yards": 706.545349069,
+      "rushing_touchdowns": 6.18446644647,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Joe Burrow",
+      "canonical_position": "QB",
+      "scoring_profile": "passing",
+      "fpts_standard": 353.542254242,
+      "fpts_full_ppr": 353.542254242,
+      "passing_yards": 5248.02259399,
+      "passing_touchdowns": 35.9053376205,
+      "rushing_yards": null,
+      "rushing_touchdowns": null,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Jared Goff",
+      "canonical_position": "QB",
+      "scoring_profile": "passing",
+      "fpts_standard": 348.684411334,
+      "fpts_full_ppr": 348.684411334,
+      "passing_yards": 5209.95367044,
+      "passing_touchdowns": 35.071566129,
+      "rushing_yards": null,
+      "rushing_touchdowns": null,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Jaxson Dart",
+      "canonical_position": null,
+      "scoring_profile": "passing|rushing",
+      "fpts_standard": 339.964883997,
+      "fpts_full_ppr": 339.964883997,
+      "passing_yards": 3508.27684649,
+      "passing_touchdowns": 23.2477903244,
+      "rushing_yards": 594.713210712,
+      "rushing_touchdowns": 7.86188796144,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Dak Prescott",
+      "canonical_position": "QB",
+      "scoring_profile": "passing",
+      "fpts_standard": 336.703010602,
+      "fpts_full_ppr": 336.703010602,
+      "passing_yards": 5248.67865304,
+      "passing_touchdowns": 31.68896612,
+      "rushing_yards": null,
+      "rushing_touchdowns": null,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Jahmyr Gibbs",
+      "canonical_position": "RB",
+      "scoring_profile": "receiving|rushing",
+      "fpts_standard": 330.852833076,
+      "fpts_full_ppr": 389.429325243,
+      "passing_yards": null,
+      "passing_touchdowns": null,
+      "rushing_yards": 1404.79495202,
+      "rushing_touchdowns": 18.8631907678,
+      "receiving_yards": 520.284838335,
+      "receiving_touchdowns": 4.19428490555,
+      "receptions": 58.5764921679
+    },
+    {
+      "canonical_player_name": "Brock Purdy",
+      "canonical_position": "QB",
+      "scoring_profile": "passing",
+      "fpts_standard": 328.027578895,
+      "fpts_full_ppr": 328.027578895,
+      "passing_yards": 4920.6491295,
+      "passing_touchdowns": 32.8004034287,
+      "rushing_yards": null,
+      "rushing_touchdowns": null,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Matthew Stafford",
+      "canonical_position": "QB",
+      "scoring_profile": "passing",
+      "fpts_standard": 327.858093699,
+      "fpts_full_ppr": 327.858093699,
+      "passing_yards": 4580.17282168,
+      "passing_touchdowns": 36.1627952079,
+      "rushing_yards": null,
+      "rushing_touchdowns": null,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Trevor Lawrence",
+      "canonical_position": "QB",
+      "scoring_profile": "passing",
+      "fpts_standard": 313.433953991,
+      "fpts_full_ppr": 313.433953991,
+      "passing_yards": 4873.06053806,
+      "passing_touchdowns": 29.6278831171,
+      "rushing_yards": null,
+      "rushing_touchdowns": null,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Patrick Mahomes",
+      "canonical_position": "QB",
+      "scoring_profile": "passing",
+      "fpts_standard": 310.750367317,
+      "fpts_full_ppr": 310.750367317,
+      "passing_yards": 4788.78126107,
+      "passing_touchdowns": 29.7997792185,
+      "rushing_yards": null,
+      "rushing_touchdowns": null,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    },
+    {
+      "canonical_player_name": "Justin Herbert",
+      "canonical_position": "QB",
+      "scoring_profile": "passing",
+      "fpts_standard": 310.305103165,
+      "fpts_full_ppr": 310.305103165,
+      "passing_yards": 4755.74825684,
+      "passing_touchdowns": 30.0187932229,
+      "rushing_yards": null,
+      "rushing_touchdowns": null,
+      "receiving_yards": null,
+      "receiving_touchdowns": null,
+      "receptions": null
+    }
+  ]
+}

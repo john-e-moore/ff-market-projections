@@ -1,0 +1,1333 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Fantasy Projection Pipeline Audit",
+    "description": "Technical audit of source agreement, Kalshi liquidity, mean inversion, consensus behavior, and final fantasy output quality.",
+    "generatedAt": "2026-08-26T18:02:17.307363Z",
+    "cards": [
+      {
+        "id": "kalshi_updates_card",
+        "description": "Number of the seven stat dispersions updated by Kalshi after all global checks.",
+        "dataset": "headline",
+        "sourceId": "report_sql",
+        "metrics": [
+          {
+            "label": "Kalshi-updated stats",
+            "field": "kalshi_updates",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "kalshi_disagreement_card",
+        "description": "Share of published consensus rows involving Kalshi that breach a configured disagreement threshold.",
+        "dataset": "headline",
+        "sourceId": "report_sql",
+        "metrics": [
+          {
+            "label": "Kalshi-involved disagreement",
+            "field": "kalshi_disagreement_rate",
+            "format": "percent"
+          }
+        ]
+      },
+      {
+        "id": "inactive_curves_card",
+        "description": "Share of eligible Kalshi player/stat curves with no traded contracts in the prior 24 hours.",
+        "dataset": "headline",
+        "sourceId": "report_sql",
+        "metrics": [
+          {
+            "label": "Eligible curves with zero 24h volume",
+            "field": "inactive_curve_rate",
+            "format": "percent"
+          }
+        ]
+      },
+      {
+        "id": "blank_names_card",
+        "description": "Fantasy projection rows with no player name in the final CSV and workbook.",
+        "dataset": "headline",
+        "sourceId": "report_sql",
+        "metrics": [
+          {
+            "label": "Blank player names",
+            "field": "blank_names",
+            "format": "number"
+          }
+        ]
+      }
+    ],
+    "charts": [
+      {
+        "id": "source_agreement_chart",
+        "title": "Median absolute source difference by stat",
+        "subtitle": "Eligible overlapping player/stat projections; lower is closer agreement",
+        "type": "bar",
+        "dataset": "pair_by_stat",
+        "sourceId": "report_sql",
+        "valueFormat": "percent",
+        "encodings": {
+          "x": {
+            "field": "comparison",
+            "type": "nominal",
+            "label": "Source pair and stat"
+          },
+          "y": {
+            "field": "median_abs_difference",
+            "type": "quantitative",
+            "label": "Median absolute difference",
+            "format": "percent"
+          },
+          "tooltip": [
+            {
+              "field": "overlap",
+              "type": "quantitative",
+              "label": "Overlapping projections"
+            },
+            {
+              "field": "median_right_to_left_ratio",
+              "type": "quantitative",
+              "label": "Right/left median ratio"
+            }
+          ]
+        },
+        "layout": "full"
+      },
+      {
+        "id": "kalshi_funnel_chart",
+        "title": "Kalshi eligibility funnel",
+        "subtitle": "Contracts and quote rows surviving each trust gate in the August 26 run",
+        "type": "bar",
+        "dataset": "kalshi_funnel",
+        "sourceId": "report_sql",
+        "valueFormat": "number",
+        "encodings": {
+          "x": {
+            "field": "stage",
+            "type": "ordinal",
+            "label": "Gate"
+          },
+          "y": {
+            "field": "count",
+            "type": "quantitative",
+            "label": "Contracts / curves"
+          }
+        },
+        "layout": "full"
+      }
+    ],
+    "tables": [
+      {
+        "id": "triple_stat_table",
+        "title": "Three-source behavior by stat",
+        "subtitle": "Median Kalshi difference and resulting equal-weight consensus shift versus the two-book average",
+        "dataset": "triple_by_stat",
+        "sourceId": "report_sql",
+        "defaultSort": {
+          "field": "median_abs_kalshi_vs_books",
+          "direction": "desc"
+        },
+        "density": "spacious",
+        "columns": [
+          {
+            "field": "stat_label",
+            "label": "Stat",
+            "type": "text"
+          },
+          {
+            "field": "overlaps",
+            "label": "Three-source overlaps",
+            "format": "number"
+          },
+          {
+            "field": "median_kalshi_vs_books",
+            "label": "Median Kalshi vs books",
+            "format": "percent",
+            "movement": true
+          },
+          {
+            "field": "median_abs_kalshi_vs_books",
+            "label": "Median absolute gap",
+            "format": "percent"
+          },
+          {
+            "field": "median_consensus_shift",
+            "label": "Median consensus shift",
+            "format": "percent",
+            "movement": true
+          },
+          {
+            "field": "disagreement_flags",
+            "label": "Disagreement flags",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "outlier_table",
+        "title": "Largest Kalshi differences on three-source overlaps",
+        "subtitle": "Top 15 absolute gaps, with liquidity for the contributing Kalshi thresholds",
+        "dataset": "triple_outliers",
+        "sourceId": "report_sql",
+        "defaultSort": {
+          "field": "kalshi_vs_books",
+          "direction": "asc"
+        },
+        "density": "dense",
+        "columns": [
+          {
+            "field": "canonical_player_name",
+            "label": "Player",
+            "type": "text"
+          },
+          {
+            "field": "stat_label",
+            "label": "Stat",
+            "type": "text"
+          },
+          {
+            "field": "draftkings_mean",
+            "label": "DK mean",
+            "format": "number"
+          },
+          {
+            "field": "fanduel_mean",
+            "label": "FD mean",
+            "format": "number"
+          },
+          {
+            "field": "kalshi_mean",
+            "label": "Kalshi mean",
+            "format": "number"
+          },
+          {
+            "field": "kalshi_vs_books",
+            "label": "Kalshi vs books",
+            "format": "percent",
+            "movement": true
+          },
+          {
+            "field": "consensus_vs_books",
+            "label": "Consensus shift",
+            "format": "percent",
+            "movement": true
+          },
+          {
+            "field": "total_volume",
+            "label": "Lifetime volume",
+            "format": "number"
+          },
+          {
+            "field": "minimum_open_interest",
+            "label": "Min open interest",
+            "format": "number"
+          },
+          {
+            "field": "volume_24h",
+            "label": "24h volume",
+            "format": "number"
+          },
+          {
+            "field": "median_spread",
+            "label": "Median spread",
+            "format": "percent"
+          },
+          {
+            "field": "minimum_top_size",
+            "label": "Min top size",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "output_quality_table",
+        "title": "Final-output quality defects",
+        "subtitle": "Counts are taken from the run-scoped fantasy and identity artifacts",
+        "dataset": "output_quality",
+        "sourceId": "report_sql",
+        "defaultSort": {
+          "field": "affected",
+          "direction": "desc"
+        },
+        "density": "spacious",
+        "columns": [
+          {
+            "field": "issue",
+            "label": "Issue",
+            "type": "text"
+          },
+          {
+            "field": "affected",
+            "label": "Affected",
+            "format": "number"
+          },
+          {
+            "field": "total",
+            "label": "Total",
+            "format": "number"
+          },
+          {
+            "field": "severity",
+            "label": "Severity",
+            "type": "text"
+          },
+          {
+            "field": "confidence",
+            "label": "Confidence",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "top_scores_table",
+        "title": "Highest partial standard-scoring outputs",
+        "subtitle": "Names recovered from source projections because the final fantasy artifact leaves them blank",
+        "dataset": "top_scores",
+        "sourceId": "report_sql",
+        "defaultSort": {
+          "field": "fpts_standard",
+          "direction": "desc"
+        },
+        "density": "dense",
+        "columns": [
+          {
+            "field": "canonical_player_name",
+            "label": "Player",
+            "type": "text"
+          },
+          {
+            "field": "canonical_position",
+            "label": "Position",
+            "type": "text"
+          },
+          {
+            "field": "scoring_profile",
+            "label": "Profile",
+            "type": "text"
+          },
+          {
+            "field": "fpts_standard",
+            "label": "Partial standard points",
+            "format": "number"
+          },
+          {
+            "field": "passing_yards",
+            "label": "Passing yards",
+            "format": "number"
+          },
+          {
+            "field": "passing_touchdowns",
+            "label": "Passing TD",
+            "format": "number"
+          },
+          {
+            "field": "rushing_yards",
+            "label": "Rushing yards",
+            "format": "number"
+          },
+          {
+            "field": "rushing_touchdowns",
+            "label": "Rushing TD",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "book_line_ratio_table",
+        "title": "Sportsbook mean-to-threshold conversion",
+        "subtitle": "Median fitted mean divided by the canonical market threshold",
+        "dataset": "book_line_ratios",
+        "sourceId": "report_sql",
+        "defaultSort": {
+          "field": "median_mean_to_threshold",
+          "direction": "desc"
+        },
+        "density": "spacious",
+        "columns": [
+          {
+            "field": "source",
+            "label": "Source",
+            "type": "text"
+          },
+          {
+            "field": "stat",
+            "label": "Stat",
+            "type": "text"
+          },
+          {
+            "field": "quotes",
+            "label": "Quotes",
+            "format": "number"
+          },
+          {
+            "field": "median_mean_to_threshold",
+            "label": "Mean / threshold",
+            "format": "number"
+          },
+          {
+            "field": "median_overround",
+            "label": "Median raw probability total",
+            "format": "number"
+          }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "report_sql",
+        "label": "Validated report dataset SQL",
+        "path": "reports/20260826T152136Z-829c0109-projection-audit/report_data.sql"
+      },
+      {
+        "id": "audit_notebook",
+        "label": "Executed projection audit notebook",
+        "path": "reports/20260826T152136Z-829c0109-projection-audit/projection_audit.ipynb"
+      },
+      {
+        "id": "source_projections",
+        "label": "Run source projections",
+        "path": "runs/20260826T152136Z-829c0109/artifacts/source_projections.csv"
+      },
+      {
+        "id": "priced_markets",
+        "label": "Run priced markets",
+        "path": "runs/20260826T152136Z-829c0109/artifacts/priced_markets.csv"
+      },
+      {
+        "id": "model_validation",
+        "label": "Run model validation",
+        "path": "runs/20260826T152136Z-829c0109/artifacts/model_validation.json"
+      },
+      {
+        "id": "fantasy_output",
+        "label": "Run fantasy projections",
+        "path": "runs/20260826T152136Z-829c0109/artifacts/fantasy_projections.csv"
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# Fantasy Projection Pipeline Audit"
+      },
+      {
+        "id": "technical_summary",
+        "type": "markdown",
+        "body": "## Technical summary\n\n**Kalshi is the outlying source in this run, and it is not yet trustworthy enough for an equal vote in consensus.** DraftKings and FanDuel agree closely on 127 overlapping player/stat projections (median absolute gap 2.6%), while DraftKings\u2013Kalshi and FanDuel\u2013Kalshi gaps are 24.0% and 31.0%. Rows involving Kalshi triggered disagreement flags 44.3% of the time, versus 5.1% without Kalshi.\n\n**The Phase 6B safety fallbacks worked, but the remaining Kalshi means still enter consensus too aggressively.** All seven dispersions stayed historical, 57 bad Kalshi curves were excluded, and only 187 of 1129 Kalshi contracts contributed. However, 135 of 158 eligible curves had no 24-hour trades, and Kalshi receives the same effective source weight as either sportsbook whenever it survives the hard gates.\n\n**The final fantasy artifact has a separate blocking defect.** Every one of its 171 player names is blank; none of the rows is marked complete, and only 91 have numeric scores."
+      },
+      {
+        "id": "headline_metrics",
+        "type": "metric-strip",
+        "cardIds": [
+          "kalshi_updates_card",
+          "kalshi_disagreement_card",
+          "inactive_curves_card",
+          "blank_names_card"
+        ]
+      },
+      {
+        "id": "source_behavior_intro",
+        "type": "markdown",
+        "body": "## Kalshi, not FanDuel, is the source behaving differently\n\nThe two sportsbooks are internally consistent: the median gap is small across shared yards and touchdown markets, and FanDuel is only modestly lower on average. Kalshi is systematically lower for yardage and receptions, while rushing-touchdown estimates are often higher and more variable. Correlation remains high because all sources rank stars above fringe players; the level differences are what matter for consensus."
+      },
+      {
+        "id": "source_agreement",
+        "type": "chart",
+        "chartId": "source_agreement_chart"
+      },
+      {
+        "id": "source_stat_interpretation",
+        "type": "markdown",
+        "body": "## Equal weighting turns those source gaps into material projection shifts\n\nOn three-source overlaps, Kalshi is a median 31.7% below the sportsbook average for rushing yards, 28.9% below for passing yards, and 14.4% below for receiving yards. Because all three sources receive one-third weight, this moves the final consensus roughly 10.6%, 9.6%, and 4.8% lower, respectively. Rushing-touchdown effects run the other direction in several prominent cases."
+      },
+      {
+        "id": "triple_stat",
+        "type": "table",
+        "tableId": "triple_stat_table"
+      },
+      {
+        "id": "liquidity_intro",
+        "type": "markdown",
+        "body": "## Kalshi filtering is conservative on quotes but incomplete on liquidity\n\nThe pipeline correctly rejects one-sided markets and spreads wider than 20 percentage points, then quarantines curves that fail fit or holdout diagnostics. That leaves 187 contributing quotes on 158 curves. The weak point is what happens next: the minimum open-interest setting is zero, no lifetime or 24-hour volume floor is enforced, and 133 eligible curves have only one usable threshold. A single low-activity midpoint can therefore receive the same source weight as a complete sportsbook O/U pair."
+      },
+      {
+        "id": "kalshi_funnel",
+        "type": "chart",
+        "chartId": "kalshi_funnel_chart"
+      },
+      {
+        "id": "liquidity_evidence",
+        "type": "markdown",
+        "body": "## Weak liquidity is associated with larger Kalshi disagreements\n\nAmong the 42 three-source overlaps, absolute Kalshi/book disagreement falls as cumulative volume rises (Spearman \u03c1=-0.47, p=0.002) and as minimum open interest rises (\u03c1=-0.48, p=0.001). This is observational and the sample is small, but it supports using liquidity in the trust decision. The largest gaps include zero-volume or very low-open-interest curves and spreads near the current maximum."
+      },
+      {
+        "id": "outliers",
+        "type": "table",
+        "tableId": "outlier_table"
+      },
+      {
+        "id": "output_defects_intro",
+        "type": "markdown",
+        "body": "## The fantasy output is not release-ready even though workbook validation passed\n\nAll 171 player names are blank in the final CSV and workbook. The workbook validator compares a null sample to the null source artifact, so it verifies propagation of the defect rather than enforcing a required display field. All rows also carry `projection_complete=false`; 80 rows have no numeric score, while the other 91 display partial totals that omit unsupported components such as interceptions, fumbles lost, and two-point conversions."
+      },
+      {
+        "id": "output_quality",
+        "type": "table",
+        "tableId": "output_quality_table"
+      },
+      {
+        "id": "score_reasonableness",
+        "type": "markdown",
+        "body": "## Several headline fantasy totals need clearer interpretation\n\nThe displayed values are partial market-supported scores, not conventional complete fantasy projections. For example, Josh Allen reaches about 450 standard points without an interception deduction, and multiple quarterbacks exceed 5,000 passing yards after threshold-to-mean inversion. Those values are mechanically consistent with the fitted negative-binomial distribution, but they should not be presented without an explicit partial-score label and an empirical check that the source-specific inversion maps preseason market prices to realized season means."
+      },
+      {
+        "id": "top_scores",
+        "type": "table",
+        "tableId": "top_scores_table"
+      },
+      {
+        "id": "inversion_risk",
+        "type": "markdown",
+        "body": "## Sportsbook agreement does not prove the inferred means are calibrated\n\nBoth books use the same historical dispersion to convert a near-median O/U threshold into a mean, so close agreement mostly shows that their posted lines are similar. The conversion lifts median means above thresholds by roughly 31% for passing yards, 26% for receiving yards, and 28% for rushing yards. That may be intentional under an injury-sensitive, right-skewed season distribution, but it is a model-risk concentration: both sportsbook projections can move together even if the shared distributional assumption is off."
+      },
+      {
+        "id": "book_line_ratios",
+        "type": "table",
+        "tableId": "book_line_ratio_table"
+      },
+      {
+        "id": "scope_definitions",
+        "type": "markdown",
+        "body": "## Scope, data, and definitions\n\nThis audit covers the live run collected on August 26, 2026; the three market snapshots were only 5.2 seconds apart. The analytical grain is one canonical player/stat/source projection after pricing and Phase 6B validation. A published consensus row has at least one eligible source because `minimum_sources=1`. A disagreement flag means the source range breaches the configured absolute or relative threshold; it does not currently block publication. A contributing Kalshi quote is a two-sided midpoint within the 20-point spread cap and on a source curve that passed residual and holdout validation."
+      },
+      {
+        "id": "methodology",
+        "type": "markdown",
+        "body": "## Methodology\n\nSource means were joined on canonical player and stat. Pairwise agreement uses symmetric absolute percentage difference so neither source is privileged. For three-source overlaps, the simple DraftKings/FanDuel average is used only as an internal comparison baseline. Kalshi liquidity was aggregated over the exact thresholds contributing to each passed curve; cumulative volume, minimum open interest, 24-hour volume, median spread, and minimum top-of-book size were retained separately. Rank correlations test association between liquidity and absolute Kalshi/book disagreement. Final fantasy outputs were profiled for name completeness, score completeness, and visible outliers."
+      },
+      {
+        "id": "limitations",
+        "type": "markdown",
+        "body": "## Limitations and robustness\n\nThis is a single point-in-time run, not a forecast-accuracy backtest. The sportsbook average is a consistency baseline, not ground truth, and the three-source sample is only 42 player/stat overlaps. Kalshi order-book depth can change without recent trades, so zero 24-hour volume does not imply a quote is unusable; it does imply that stale resting orders deserve less confidence. The source-level direction is robust across multiple internal checks: source-pair gaps, disagreement flags, the liquidity relationship, the rejected global Kalshi calibration, and individual outliers all point the same way."
+      },
+      {
+        "id": "recommendations",
+        "type": "markdown",
+        "body": "## Recommended next steps\n\n1. **Block release when projection names are blank.** Carry canonical/display names into consensus and scoring, and add not-null/coverage assertions to CSV and workbook validation.\n2. **Stop presenting partial totals as ordinary fantasy projections.** Rename them to partial market-supported points or leave final point columns blank until required scoring components are available; add a completeness gate to workbook publication.\n3. **Make Kalshi weight depend on evidence quality.** Use a liquidity score based on spread, two-sided top-of-book depth, open interest, cumulative volume, and 24-hour activity; cap or exclude single-threshold, zero-volume, and very wide-spread curves.\n4. **Do not let flagged disagreements average through unchanged.** Quarantine, cap the outlying source's weight, or publish an uncertainty band when source disagreement is material.\n5. **Require two sources for headline consensus and fantasy scoring.** Keep single-source rows in an audit sheet, especially the 53 Kalshi-only rows, but do not treat them as equally decision-ready.\n6. **Backtest the full market-to-mean pipeline by source.** Preserve historical market snapshots and evaluate mean bias, calibration, and fantasy-score error against realized seasons; fit source-specific reliability and disagreement thresholds.\n7. **Use stat-specific disagreement limits.** A single 100-unit absolute cutoff has very different meaning for passing yards, receiving yards, and touchdowns."
+      },
+      {
+        "id": "further_questions",
+        "type": "markdown",
+        "body": "## Further questions\n\n- Do Kalshi prices converge toward sportsbook-derived means as volume and open interest build closer to kickoff?\n- How stable are the single-threshold inversions across daily snapshots, especially when the midpoint is unchanged but top-of-book size changes?\n- Would a bounded or zero-inflated availability model better represent full-season outcomes than one negative-binomial family for every player within a stat?\n- Which single-source projections should remain visible for audit but be excluded from fantasy rankings?"
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-26T18:02:17.307363Z",
+    "status": "ready",
+    "datasets": {
+      "headline": [
+        {
+          "kalshi_updates": 0,
+          "kalshi_disagreement_rate": 0.4430379746835443,
+          "inactive_curve_rate": 0.8544303797468354,
+          "blank_names": 171
+        }
+      ],
+      "pair_by_stat": [
+        {
+          "pair": "DraftKings vs FanDuel",
+          "stat": "Passing Touchdowns",
+          "comparison": "DK vs FD \u00b7 Passing Touchdowns",
+          "overlap": 21,
+          "median_abs_difference": 0.027333300789567867,
+          "median_right_to_left_ratio": 0.9877683851462554
+        },
+        {
+          "pair": "DraftKings vs FanDuel",
+          "stat": "Passing Yards",
+          "comparison": "DK vs FD \u00b7 Passing Yards",
+          "overlap": 21,
+          "median_abs_difference": 0.02444392947640358,
+          "median_right_to_left_ratio": 0.9849214865494088
+        },
+        {
+          "pair": "DraftKings vs FanDuel",
+          "stat": "Receiving Yards",
+          "comparison": "DK vs FD \u00b7 Receiving Yards",
+          "overlap": 40,
+          "median_abs_difference": 0.0242998907908706,
+          "median_right_to_left_ratio": 1.0008516968536716
+        },
+        {
+          "pair": "DraftKings vs FanDuel",
+          "stat": "Rushing Touchdowns",
+          "comparison": "DK vs FD \u00b7 Rushing Touchdowns",
+          "overlap": 20,
+          "median_abs_difference": 0.0678604737469409,
+          "median_right_to_left_ratio": 1.011161885679076
+        },
+        {
+          "pair": "DraftKings vs FanDuel",
+          "stat": "Rushing Yards",
+          "comparison": "DK vs FD \u00b7 Rushing Yards",
+          "overlap": 25,
+          "median_abs_difference": 0.025866078427367004,
+          "median_right_to_left_ratio": 0.976088915225835
+        },
+        {
+          "pair": "DraftKings vs Kalshi",
+          "stat": "Passing Touchdowns",
+          "comparison": "DK vs Kalshi \u00b7 Passing Touchdowns",
+          "overlap": 1,
+          "median_abs_difference": 0.2929464794563817,
+          "median_right_to_left_ratio": 0.7444803164129375
+        },
+        {
+          "pair": "DraftKings vs Kalshi",
+          "stat": "Passing Yards",
+          "comparison": "DK vs Kalshi \u00b7 Passing Yards",
+          "overlap": 5,
+          "median_abs_difference": 0.3469444048726126,
+          "median_right_to_left_ratio": 0.7043437380516527
+        },
+        {
+          "pair": "DraftKings vs Kalshi",
+          "stat": "Receiving Touchdowns",
+          "comparison": "DK vs Kalshi \u00b7 Receiving Touchdowns",
+          "overlap": 20,
+          "median_abs_difference": 0.14346026362886166,
+          "median_right_to_left_ratio": 0.866178209369739
+        },
+        {
+          "pair": "DraftKings vs Kalshi",
+          "stat": "Receiving Yards",
+          "comparison": "DK vs Kalshi \u00b7 Receiving Yards",
+          "overlap": 25,
+          "median_abs_difference": 0.15333732863340038,
+          "median_right_to_left_ratio": 0.8663517649800859
+        },
+        {
+          "pair": "DraftKings vs Kalshi",
+          "stat": "Receptions",
+          "comparison": "DK vs Kalshi \u00b7 Receptions",
+          "overlap": 17,
+          "median_abs_difference": 0.28678072601825394,
+          "median_right_to_left_ratio": 0.7491838874139918
+        },
+        {
+          "pair": "DraftKings vs Kalshi",
+          "stat": "Rushing Touchdowns",
+          "comparison": "DK vs Kalshi \u00b7 Rushing Touchdowns",
+          "overlap": 15,
+          "median_abs_difference": 0.2807621982716703,
+          "median_right_to_left_ratio": 1.1426536347245102
+        },
+        {
+          "pair": "DraftKings vs Kalshi",
+          "stat": "Rushing Yards",
+          "comparison": "DK vs Kalshi \u00b7 Rushing Yards",
+          "overlap": 17,
+          "median_abs_difference": 0.3692923178297664,
+          "median_right_to_left_ratio": 0.6882678299754652
+        },
+        {
+          "pair": "FanDuel vs Kalshi",
+          "stat": "Passing Touchdowns",
+          "comparison": "FD vs Kalshi \u00b7 Passing Touchdowns",
+          "overlap": 1,
+          "median_abs_difference": 0.2724850741262639,
+          "median_right_to_left_ratio": 0.7601875785863805
+        },
+        {
+          "pair": "FanDuel vs Kalshi",
+          "stat": "Passing Yards",
+          "comparison": "FD vs Kalshi \u00b7 Passing Yards",
+          "overlap": 4,
+          "median_abs_difference": 0.4164482955532013,
+          "median_right_to_left_ratio": 0.6575260115041439
+        },
+        {
+          "pair": "FanDuel vs Kalshi",
+          "stat": "Receiving Yards",
+          "comparison": "FD vs Kalshi \u00b7 Receiving Yards",
+          "overlap": 15,
+          "median_abs_difference": 0.1683813494234105,
+          "median_right_to_left_ratio": 0.8446939700268272
+        },
+        {
+          "pair": "FanDuel vs Kalshi",
+          "stat": "Rushing Touchdowns",
+          "comparison": "FD vs Kalshi \u00b7 Rushing Touchdowns",
+          "overlap": 12,
+          "median_abs_difference": 0.2049175679723006,
+          "median_right_to_left_ratio": 1.1125240387596622
+        },
+        {
+          "pair": "FanDuel vs Kalshi",
+          "stat": "Rushing Yards",
+          "comparison": "FD vs Kalshi \u00b7 Rushing Yards",
+          "overlap": 15,
+          "median_abs_difference": 0.38273903394087466,
+          "median_right_to_left_ratio": 0.6787402829357669
+        }
+      ],
+      "kalshi_funnel": [
+        {
+          "stage": "Raw Kalshi contracts",
+          "count": 1129
+        },
+        {
+          "stage": "Two-sided and spread-eligible",
+          "count": 336
+        },
+        {
+          "stage": "Quotes on curves used",
+          "count": 187
+        },
+        {
+          "stage": "Eligible player/stat curves",
+          "count": 158
+        },
+        {
+          "stage": "Stats with Kalshi dispersion update",
+          "count": 0
+        }
+      ],
+      "triple_by_stat": [
+        {
+          "stat_label": "Passing Touchdowns",
+          "overlaps": 1,
+          "median_kalshi_vs_books": -0.2477480367328101,
+          "median_abs_kalshi_vs_books": 0.2477480367328101,
+          "median_consensus_shift": -0.08258267891008499,
+          "disagreement_flags": true
+        },
+        {
+          "stat_label": "Passing Yards",
+          "overlaps": 3,
+          "median_kalshi_vs_books": -0.2889094250170809,
+          "median_abs_kalshi_vs_books": 0.2889094250170809,
+          "median_consensus_shift": -0.09630314167301791,
+          "disagreement_flags": 3
+        },
+        {
+          "stat_label": "Receiving Yards",
+          "overlaps": 13,
+          "median_kalshi_vs_books": -0.1441701368690224,
+          "median_abs_kalshi_vs_books": 0.1441701368690224,
+          "median_consensus_shift": -0.04805671228689472,
+          "disagreement_flags": 9
+        },
+        {
+          "stat_label": "Rushing Touchdowns",
+          "overlaps": 11,
+          "median_kalshi_vs_books": 0.1378980756590213,
+          "median_abs_kalshi_vs_books": 0.26237014318822033,
+          "median_consensus_shift": 0.04596602521934307,
+          "disagreement_flags": 8
+        },
+        {
+          "stat_label": "Rushing Yards",
+          "overlaps": 14,
+          "median_kalshi_vs_books": -0.3166959643437194,
+          "median_abs_kalshi_vs_books": 0.3166959643437194,
+          "median_consensus_shift": -0.10556532144705053,
+          "disagreement_flags": 14
+        }
+      ],
+      "triple_outliers": [
+        {
+          "canonical_player_name": "James Cook",
+          "stat_label": "Rushing Touchdowns",
+          "draftkings_mean": 12.1569194739,
+          "fanduel_mean": 12.184584908,
+          "kalshi_mean": 21.8931029163,
+          "kalshi_vs_books": 0.7988290758708735,
+          "consensus_vs_books": 0.2662763586263633,
+          "contributing_quotes": 1,
+          "total_volume": 119.72,
+          "minimum_open_interest": 119.72,
+          "volume_24h": 0.0,
+          "median_spread": 0.08,
+          "minimum_top_size": 5.29
+        },
+        {
+          "canonical_player_name": "Jahmyr Gibbs",
+          "stat_label": "Rushing Touchdowns",
+          "draftkings_mean": 15.1548171147,
+          "fanduel_mean": 16.2724865312,
+          "kalshi_mean": 25.1622686574,
+          "kalshi_vs_books": 0.6012998722964047,
+          "consensus_vs_books": 0.20043329076758956,
+          "contributing_quotes": 1,
+          "total_volume": 29.93,
+          "minimum_open_interest": 29.93,
+          "volume_24h": 0.82,
+          "median_spread": 0.09,
+          "minimum_top_size": 4.18
+        },
+        {
+          "canonical_player_name": "Travis Kelce",
+          "stat_label": "Receiving Yards",
+          "draftkings_mean": 851.584200823,
+          "fanduel_mean": 852.846445092,
+          "kalshi_mean": 498.675854024,
+          "kalshi_vs_books": -0.414847585357405,
+          "consensus_vs_books": -0.13828252845246827,
+          "contributing_quotes": 1,
+          "total_volume": 455.35,
+          "minimum_open_interest": 455.35,
+          "volume_24h": 0.0,
+          "median_spread": 0.18,
+          "minimum_top_size": 5.0
+        },
+        {
+          "canonical_player_name": "Christian McCaffrey",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 1220.71614166,
+          "fanduel_mean": 1157.73021769,
+          "kalshi_mean": 696.66475483,
+          "kalshi_vs_books": -0.41418501864352336,
+          "consensus_vs_books": -0.13806167288117446,
+          "contributing_quotes": 1,
+          "total_volume": 0.0,
+          "minimum_open_interest": 0.0,
+          "volume_24h": 0.0,
+          "median_spread": 0.11,
+          "minimum_top_size": 200.0
+        },
+        {
+          "canonical_player_name": "Devon Achane",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 1252.85181727,
+          "fanduel_mean": 1254.1372443,
+          "kalshi_mean": 736.299894631,
+          "kalshi_vs_books": -0.4126022279731107,
+          "consensus_vs_books": -0.13753407599396217,
+          "contributing_quotes": 1,
+          "total_volume": 54.44,
+          "minimum_open_interest": 54.44,
+          "volume_24h": 0.0,
+          "median_spread": 0.08,
+          "minimum_top_size": 10.0
+        },
+        {
+          "canonical_player_name": "Kyren Williams",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 1220.71614166,
+          "fanduel_mean": 1189.86589315,
+          "kalshi_mean": 710.014441502,
+          "kalshi_vs_books": -0.41091866507835917,
+          "consensus_vs_books": -0.13697288835724042,
+          "contributing_quotes": 1,
+          "total_volume": 0.0,
+          "minimum_open_interest": 0.0,
+          "volume_24h": 0.0,
+          "median_spread": 0.1,
+          "minimum_top_size": 600.0
+        },
+        {
+          "canonical_player_name": "Omarion Hampton",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 1220.71614166,
+          "fanduel_mean": 1189.86589315,
+          "kalshi_mean": 718.923718842,
+          "kalshi_vs_books": -0.40352685910673436,
+          "consensus_vs_books": -0.13450895303613103,
+          "contributing_quotes": 2,
+          "total_volume": 1100.97,
+          "minimum_open_interest": 307.61,
+          "volume_24h": 0.0,
+          "median_spread": 0.095,
+          "minimum_top_size": 5.0
+        },
+        {
+          "canonical_player_name": "Jaxson Dart",
+          "stat_label": "Passing Yards",
+          "draftkings_mean": 4027.20815877,
+          "fanduel_mean": 4068.42842801,
+          "kalshi_mean": 2429.1939527,
+          "kalshi_vs_books": -0.39987574129332304,
+          "consensus_vs_books": -0.13329191376526445,
+          "contributing_quotes": 2,
+          "total_volume": 294.88,
+          "minimum_open_interest": 0.0,
+          "volume_24h": 213.6,
+          "median_spread": 0.145,
+          "minimum_top_size": 5.0
+        },
+        {
+          "canonical_player_name": "Jeremiyah Love",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 995.766414907,
+          "fanduel_mean": 997.051841902,
+          "kalshi_mean": 641.352253757,
+          "kalshi_vs_books": -0.35633643302328516,
+          "consensus_vs_books": -0.11877881100809626,
+          "contributing_quotes": 1,
+          "total_volume": 30.0,
+          "minimum_open_interest": 30.0,
+          "volume_24h": 0.0,
+          "median_spread": 0.09,
+          "minimum_top_size": 150.0
+        },
+        {
+          "canonical_player_name": "Travis Etienne",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 1060.03776488,
+          "fanduel_mean": 1125.59454233,
+          "kalshi_mean": 729.589892126,
+          "kalshi_vs_books": -0.33237636566844586,
+          "consensus_vs_books": -0.11079212188948188,
+          "contributing_quotes": 1,
+          "total_volume": 328.75,
+          "minimum_open_interest": 328.75,
+          "volume_24h": 0.0,
+          "median_spread": 0.09,
+          "minimum_top_size": 5.0
+        },
+        {
+          "canonical_player_name": "Jahmyr Gibbs",
+          "stat_label": "Receiving Yards",
+          "draftkings_mean": 567.57925257,
+          "fanduel_mean": 600.397600349,
+          "kalshi_mean": 392.877662086,
+          "kalshi_vs_books": -0.3272509449067887,
+          "consensus_vs_books": -0.10908364830226289,
+          "contributing_quotes": 1,
+          "total_volume": 530.69,
+          "minimum_open_interest": 530.69,
+          "volume_24h": 0.0,
+          "median_spread": 0.17,
+          "minimum_top_size": 20.0
+        },
+        {
+          "canonical_player_name": "Josh Allen",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 642.27400438,
+          "fanduel_mean": 643.559431255,
+          "kalshi_mean": 436.809710456,
+          "kalshi_vs_books": -0.32058119138847174,
+          "consensus_vs_books": -0.10686039713000907,
+          "contributing_quotes": 1,
+          "total_volume": 1.0,
+          "minimum_open_interest": 1.0,
+          "volume_24h": 0.0,
+          "median_spread": 0.12,
+          "minimum_top_size": 30.0
+        },
+        {
+          "canonical_player_name": "Bijan Robinson",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 1509.93722418,
+          "fanduel_mean": 1479.08697516,
+          "kalshi_mean": 1027.01266787,
+          "kalshi_vs_books": -0.31281073729896697,
+          "consensus_vs_books": -0.10427024576409197,
+          "contributing_quotes": 1,
+          "total_volume": 719.6,
+          "minimum_open_interest": 714.6,
+          "volume_24h": 420.0,
+          "median_spread": 0.11,
+          "minimum_top_size": 90.0
+        },
+        {
+          "canonical_player_name": "James Cook",
+          "stat_label": "Rushing Yards",
+          "draftkings_mean": 1574.20857641,
+          "fanduel_mean": 1511.22265122,
+          "kalshi_mean": 1065.81692078,
+          "kalshi_vs_books": -0.3091293617335417,
+          "consensus_vs_books": -0.1030431205800079,
+          "contributing_quotes": 1,
+          "total_volume": 0.0,
+          "minimum_open_interest": 0.0,
+          "volume_24h": 0.0,
+          "median_spread": 0.14,
+          "minimum_top_size": 5.0
+        },
+        {
+          "canonical_player_name": "George Kittle",
+          "stat_label": "Receiving Yards",
+          "draftkings_mean": 883.140307679,
+          "fanduel_mean": 884.402551957,
+          "kalshi_mean": 620.125167261,
+          "kalshi_vs_books": -0.29831951301174575,
+          "consensus_vs_books": -0.09943983767058195,
+          "contributing_quotes": 1,
+          "total_volume": 291.8,
+          "minimum_open_interest": 291.8,
+          "volume_24h": 0.0,
+          "median_spread": 0.01,
+          "minimum_top_size": 58.0
+        }
+      ],
+      "output_quality": [
+        {
+          "issue": "Blank player names",
+          "affected": 171,
+          "total": 171,
+          "severity": "High",
+          "confidence": "High"
+        },
+        {
+          "issue": "Rows marked projection_complete=false",
+          "affected": 171,
+          "total": 171,
+          "severity": "High",
+          "confidence": "High"
+        },
+        {
+          "issue": "Rows without a numeric standard score",
+          "affected": 80,
+          "total": 171,
+          "severity": "Medium",
+          "confidence": "High"
+        },
+        {
+          "issue": "Unmatched source/player identities",
+          "affected": 77,
+          "total": 363,
+          "severity": "Medium",
+          "confidence": "High"
+        }
+      ],
+      "top_scores": [
+        {
+          "canonical_player_name": "Josh Allen",
+          "canonical_position": "QB",
+          "scoring_profile": "passing|rushing",
+          "fpts_standard": 450.196316384,
+          "fpts_full_ppr": 450.196316384,
+          "passing_yards": 4740.23289161,
+          "passing_touchdowns": 29.5336522348,
+          "rushing_yards": 574.21438203,
+          "rushing_touchdowns": 14.1718255963,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Drake Maye",
+          "canonical_position": "QB",
+          "scoring_profile": "passing|rushing",
+          "fpts_standard": 413.174182592,
+          "fpts_full_ppr": 413.174182592,
+          "passing_yards": 5089.67980141,
+          "passing_touchdowns": 32.3031988093,
+          "rushing_yards": 530.441870147,
+          "rushing_touchdowns": 4.55500138054,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Jalen Hurts",
+          "canonical_position": "QB",
+          "scoring_profile": "passing|rushing",
+          "fpts_standard": 391.729677959,
+          "fpts_full_ppr": 391.729677959,
+          "passing_yards": 4198.9841782,
+          "passing_touchdowns": 26.6400119126,
+          "rushing_yards": 530.441870147,
+          "rushing_touchdowns": 10.6943460276,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Lamar Jackson",
+          "canonical_position": "QB",
+          "scoring_profile": "passing|rushing",
+          "fpts_standard": 378.674179117,
+          "fpts_full_ppr": 378.674179117,
+          "passing_yards": 4231.78713052,
+          "passing_touchdowns": 28.4253685343,
+          "rushing_yards": 683.680166301,
+          "rushing_touchdowns": 4.55553385475,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Jayden Daniels",
+          "canonical_position": "QB",
+          "scoring_profile": "passing|rushing",
+          "fpts_standard": 372.052702393,
+          "fpts_full_ppr": 372.052702393,
+          "passing_yards": 4133.37827358,
+          "passing_touchdowns": 24.7390594661,
+          "rushing_yards": 706.545349069,
+          "rushing_touchdowns": 6.18446644647,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Joe Burrow",
+          "canonical_position": "QB",
+          "scoring_profile": "passing",
+          "fpts_standard": 353.542254242,
+          "fpts_full_ppr": 353.542254242,
+          "passing_yards": 5248.02259399,
+          "passing_touchdowns": 35.9053376205,
+          "rushing_yards": null,
+          "rushing_touchdowns": null,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Jared Goff",
+          "canonical_position": "QB",
+          "scoring_profile": "passing",
+          "fpts_standard": 348.684411334,
+          "fpts_full_ppr": 348.684411334,
+          "passing_yards": 5209.95367044,
+          "passing_touchdowns": 35.071566129,
+          "rushing_yards": null,
+          "rushing_touchdowns": null,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Jaxson Dart",
+          "canonical_position": null,
+          "scoring_profile": "passing|rushing",
+          "fpts_standard": 339.964883997,
+          "fpts_full_ppr": 339.964883997,
+          "passing_yards": 3508.27684649,
+          "passing_touchdowns": 23.2477903244,
+          "rushing_yards": 594.713210712,
+          "rushing_touchdowns": 7.86188796144,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Dak Prescott",
+          "canonical_position": "QB",
+          "scoring_profile": "passing",
+          "fpts_standard": 336.703010602,
+          "fpts_full_ppr": 336.703010602,
+          "passing_yards": 5248.67865304,
+          "passing_touchdowns": 31.68896612,
+          "rushing_yards": null,
+          "rushing_touchdowns": null,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Jahmyr Gibbs",
+          "canonical_position": "RB",
+          "scoring_profile": "receiving|rushing",
+          "fpts_standard": 330.852833076,
+          "fpts_full_ppr": 389.429325243,
+          "passing_yards": null,
+          "passing_touchdowns": null,
+          "rushing_yards": 1404.79495202,
+          "rushing_touchdowns": 18.8631907678,
+          "receiving_yards": 520.284838335,
+          "receiving_touchdowns": 4.19428490555,
+          "receptions": 58.5764921679
+        },
+        {
+          "canonical_player_name": "Brock Purdy",
+          "canonical_position": "QB",
+          "scoring_profile": "passing",
+          "fpts_standard": 328.027578895,
+          "fpts_full_ppr": 328.027578895,
+          "passing_yards": 4920.6491295,
+          "passing_touchdowns": 32.8004034287,
+          "rushing_yards": null,
+          "rushing_touchdowns": null,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Matthew Stafford",
+          "canonical_position": "QB",
+          "scoring_profile": "passing",
+          "fpts_standard": 327.858093699,
+          "fpts_full_ppr": 327.858093699,
+          "passing_yards": 4580.17282168,
+          "passing_touchdowns": 36.1627952079,
+          "rushing_yards": null,
+          "rushing_touchdowns": null,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Trevor Lawrence",
+          "canonical_position": "QB",
+          "scoring_profile": "passing",
+          "fpts_standard": 313.433953991,
+          "fpts_full_ppr": 313.433953991,
+          "passing_yards": 4873.06053806,
+          "passing_touchdowns": 29.6278831171,
+          "rushing_yards": null,
+          "rushing_touchdowns": null,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Patrick Mahomes",
+          "canonical_position": "QB",
+          "scoring_profile": "passing",
+          "fpts_standard": 310.750367317,
+          "fpts_full_ppr": 310.750367317,
+          "passing_yards": 4788.78126107,
+          "passing_touchdowns": 29.7997792185,
+          "rushing_yards": null,
+          "rushing_touchdowns": null,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        },
+        {
+          "canonical_player_name": "Justin Herbert",
+          "canonical_position": "QB",
+          "scoring_profile": "passing",
+          "fpts_standard": 310.305103165,
+          "fpts_full_ppr": 310.305103165,
+          "passing_yards": 4755.74825684,
+          "passing_touchdowns": 30.0187932229,
+          "rushing_yards": null,
+          "rushing_touchdowns": null,
+          "receiving_yards": null,
+          "receiving_touchdowns": null,
+          "receptions": null
+        }
+      ],
+      "book_line_ratios": [
+        {
+          "source": "Draftkings",
+          "stat": "Passing Touchdowns",
+          "quotes": 28,
+          "median_mean_to_threshold": 1.1662299634809317,
+          "median_overround": 1.04707884288
+        },
+        {
+          "source": "Draftkings",
+          "stat": "Passing Yards",
+          "quotes": 28,
+          "median_mean_to_threshold": 1.3119807480588286,
+          "median_overround": 1.04761904762
+        },
+        {
+          "source": "Draftkings",
+          "stat": "Receiving Touchdowns",
+          "quotes": 55,
+          "median_mean_to_threshold": 1.0637330291603717,
+          "median_overround": 1.05555555556
+        },
+        {
+          "source": "Draftkings",
+          "stat": "Receiving Yards",
+          "quotes": 70,
+          "median_mean_to_threshold": 1.2616885538467242,
+          "median_overround": 1.04761904762
+        },
+        {
+          "source": "Draftkings",
+          "stat": "Receptions",
+          "quotes": 43,
+          "median_mean_to_threshold": 1.1902550350087577,
+          "median_overround": 1.05869324474
+        },
+        {
+          "source": "Draftkings",
+          "stat": "Rushing Touchdowns",
+          "quotes": 33,
+          "median_mean_to_threshold": 1.1850199828743455,
+          "median_overround": 1.05555555556
+        },
+        {
+          "source": "Draftkings",
+          "stat": "Rushing Yards",
+          "quotes": 37,
+          "median_mean_to_threshold": 1.284877612289321,
+          "median_overround": 1.04761904762
+        },
+        {
+          "source": "Fanduel",
+          "stat": "Passing Touchdowns",
+          "quotes": 23,
+          "median_mean_to_threshold": 1.1409137094822677,
+          "median_overround": 1.06896551724
+        },
+        {
+          "source": "Fanduel",
+          "stat": "Passing Yards",
+          "quotes": 23,
+          "median_mean_to_threshold": 1.3119896215751574,
+          "median_overround": 1.06542056075
+        },
+        {
+          "source": "Fanduel",
+          "stat": "Receiving Yards",
+          "quotes": 43,
+          "median_mean_to_threshold": 1.261766273080772,
+          "median_overround": 1.06542056075
+        },
+        {
+          "source": "Fanduel",
+          "stat": "Rushing Touchdowns",
+          "quotes": 21,
+          "median_mean_to_threshold": 1.2456956044191905,
+          "median_overround": 1.06878031878
+        },
+        {
+          "source": "Fanduel",
+          "stat": "Rushing Yards",
+          "quotes": 26,
+          "median_mean_to_threshold": 1.28493223747753,
+          "median_overround": 1.06542056075
+        }
+      ]
+    },
+    "accessIssues": []
+  },
+  "sources": [
+    {
+      "id": "report_sql",
+      "label": "Validated report dataset SQL",
+      "path": "reports/20260826T152136Z-829c0109-projection-audit/report_data.sql"
+    },
+    {
+      "id": "audit_notebook",
+      "label": "Executed projection audit notebook",
+      "path": "reports/20260826T152136Z-829c0109-projection-audit/projection_audit.ipynb"
+    },
+    {
+      "id": "source_projections",
+      "label": "Run source projections",
+      "path": "runs/20260826T152136Z-829c0109/artifacts/source_projections.csv"
+    },
+    {
+      "id": "priced_markets",
+      "label": "Run priced markets",
+      "path": "runs/20260826T152136Z-829c0109/artifacts/priced_markets.csv"
+    },
+    {
+      "id": "model_validation",
+      "label": "Run model validation",
+      "path": "runs/20260826T152136Z-829c0109/artifacts/model_validation.json"
+    },
+    {
+      "id": "fantasy_output",
+      "label": "Run fantasy projections",
+      "path": "runs/20260826T152136Z-829c0109/artifacts/fantasy_projections.csv"
+    }
+  ]
+}

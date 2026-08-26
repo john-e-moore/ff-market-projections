@@ -44,12 +44,12 @@ def aggregate_source_projections(
         if not isinstance(config, dict) or not isinstance(config.get("enabled"), bool):
             raise ConsensusError(f"sources.{source}.enabled must be boolean")
         weight = config.get("weight")
-        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(float(weight)) or float(weight) <= 0:
-            raise ConsensusError(f"sources.{source}.weight must be positive")
-        if config["enabled"]:
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(float(weight)) or float(weight) < 0:
+            raise ConsensusError(f"sources.{source}.weight must be non-negative")
+        if config["enabled"] and float(weight) > 0:
             enabled[source] = float(weight)
     if not enabled:
-        raise ConsensusError("at least one source must be enabled")
+        raise ConsensusError("at least one enabled source must have positive weight")
 
     frame = source_projections.copy()
     frame["source"] = frame["source"].astype(str)

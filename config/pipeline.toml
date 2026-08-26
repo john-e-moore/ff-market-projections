@@ -16,7 +16,7 @@ state = "nj"
 
 [sources.kalshi]
 enabled = true
-weight = 1.0
+weight = 0.0
 require_two_sided_quote = true
 max_spread_probability_points = 20.0
 min_open_interest_contracts = 0

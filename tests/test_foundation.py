@@ -28,7 +28,7 @@ def test_config_loads_and_effective_copy_preserves_semantics(tmp_path: Path) -> 
     ("replacement", "message"),
     [
         ("unexpected = true\n", "Unknown setting"),
-        ("weight = -1.0", "must be a positive number"),
+        ("weight = -1.0", "must be a non-negative number"),
         ("probability_floor = 0.99\nprobability_ceiling = 0.98", "probability_floor"),
         ("prior_seasons = 4", "prior_seasons must be between 1 and 3"),
         ("passing_yards = [2.0, 1.0]", "dispersion_bounds.passing_yards"),

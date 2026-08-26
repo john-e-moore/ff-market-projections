@@ -61,10 +61,28 @@ def test_custom_weights_disabled_source_and_disagreement_flag() -> None:
     assert row["disagreement_flag"] == True
 
 
-@pytest.mark.parametrize("weight", [0, -1])
+def test_zero_weight_keeps_collection_enabled_but_excludes_source_from_consensus() -> None:
+    sources = {**SOURCES, "kalshi": {"enabled": True, "weight": 0.0}}
+    result = aggregate_source_projections(
+        _rows(
+            ("draftkings", 800.0, "passed"),
+            ("fanduel", 900.0, "passed"),
+            ("kalshi", 2000.0, "passed"),
+        ),
+        sources,
+        AGGREGATION,
+    )
+    row = result.consensus_stats.iloc[0]
+    assert row["consensus_mean"] == pytest.approx(850.0)
+    assert row["source_count"] == 2
+    assert row["source_list"] == "draftkings|fanduel"
+    assert "kalshi_mean" not in row
+
+
+@pytest.mark.parametrize("weight", [-1])
 def test_invalid_weights_rejected(weight: float) -> None:
     sources = {**SOURCES, "fanduel": {"enabled": True, "weight": weight}}
-    with pytest.raises(ConsensusError, match="weight must be positive"):
+    with pytest.raises(ConsensusError, match="weight must be non-negative"):
         aggregate_source_projections(_rows(("draftkings", 800.0, "passed")), sources, AGGREGATION)
 
 
