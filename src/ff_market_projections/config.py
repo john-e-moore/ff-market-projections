@@ -24,13 +24,26 @@ _SCHEMA: dict[str, Any] = {
     },
     "names": {"automatic_fuzzy_match", "minimum_score", "minimum_runner_up_gap"},
     "pricing": {"sportsbook_devig_method", "probability_tolerance", "reject_ambiguous_integer_lines"},
-    "model": {"family", "dispersion_mode", "minimum_calibration_groups", "minimum_thresholds_per_group", "probability_floor", "probability_ceiling", "robust_loss", "on_calibration_failure", "bootstrap_samples", "random_seed"},
+    "model": {"family", "dispersion_mode", "minimum_calibration_groups", "minimum_thresholds_per_group", "probability_floor", "probability_ceiling", "robust_loss", "on_calibration_failure", "bootstrap_samples", "random_seed", "historical_calibration"},
     "aggregation": {"minimum_sources", "renormalize_available_source_weights"},
     "scoring": {"missing_stat_policy", "passing_yards", "passing_touchdowns", "passing_interceptions", "rushing_yards", "rushing_touchdowns", "receiving_yards", "receiving_touchdowns", "fumbles_lost", "two_point_conversions", "reception_bonus", "required_profiles"},
     "workbook": {"filename", "freeze_header", "autofilter"},
 }
 _REQUIRED_TOP_LEVEL = frozenset(_SCHEMA)
 _REQUIRED_SOURCES = frozenset(_SCHEMA["sources"])
+_TARGET_STATS = frozenset({
+    "passing_yards", "passing_touchdowns", "rushing_yards", "rushing_touchdowns",
+    "receiving_yards", "receiving_touchdowns", "receptions",
+})
+_HISTORICAL_CALIBRATION_KEYS = {
+    "sensitivity_start_seasons", "bootstrap_confidence_level",
+    "minimum_holdout_player_seasons_per_stat", "minimum_sensitivity_player_seasons_per_stat",
+    "brier_event_cdf_levels", "interval_levels", "mean_calibration_bins",
+    "max_holdout_nll_regret_per_player_season", "max_brier_calibration_gap",
+    "max_interval_coverage_error", "max_abs_relative_bias",
+    "max_sensitivity_log_dispersion_delta", "minimum_bootstrap_success_rate",
+    "dispersion_bounds",
+}
 
 
 @dataclass(frozen=True)
@@ -110,6 +123,9 @@ def _validate(values: dict[str, Any]) -> None:
         raise ConfigError("historical.prior_seasons must be between 1 and 3")
     if historical["minimum_training_seasons"] > historical["prior_seasons"]:
         raise ConfigError("historical.minimum_training_seasons cannot exceed historical.prior_seasons")
+    calibration_seasons = historical["latest_completed_season"] - historical["calibration_start_season"] + 1
+    if historical["holdout_seasons"] >= calibration_seasons:
+        raise ConfigError("historical.holdout_seasons must leave at least one pre-holdout calibration season")
     run_start_season = int(run["season"][:4])
     if historical["latest_completed_season"] >= run_start_season:
         raise ConfigError("historical.latest_completed_season must precede the configured run season")
@@ -137,9 +153,67 @@ def _validate(values: dict[str, Any]) -> None:
         raise ConfigError("model.family must be negative_binomial")
     if model.get("dispersion_mode") not in {"historical_only", "historical_with_kalshi_update"}:
         raise ConfigError("model.dispersion_mode is unsupported")
+    if model.get("on_calibration_failure") != "fail":
+        raise ConfigError("model.on_calibration_failure must be fail")
+    _positive(_expect(model, "bootstrap_samples", "model"), "model.bootstrap_samples")
+    if isinstance(model["bootstrap_samples"], bool) or not isinstance(model["bootstrap_samples"], int):
+        raise ConfigError("model.bootstrap_samples must be an integer")
+    if isinstance(_expect(model, "random_seed", "model"), bool) or not isinstance(model["random_seed"], int):
+        raise ConfigError("model.random_seed must be an integer")
     floor, ceiling = _expect(model, "probability_floor", "model"), _expect(model, "probability_ceiling", "model")
     if not (isinstance(floor, (int, float)) and isinstance(ceiling, (int, float)) and 0 < floor < ceiling < 1):
         raise ConfigError("model probability_floor and probability_ceiling must satisfy 0 < floor < ceiling < 1")
+
+    calibration = _expect(model, "historical_calibration", "model")
+    if not isinstance(calibration, dict):
+        raise ConfigError("model.historical_calibration must be a TOML table")
+    _assert_keys(calibration, _HISTORICAL_CALIBRATION_KEYS, "model.historical_calibration")
+    for key in _HISTORICAL_CALIBRATION_KEYS:
+        _expect(calibration, key, "model.historical_calibration")
+    starts = calibration["sensitivity_start_seasons"]
+    if (
+        not isinstance(starts, list) or not starts
+        or any(isinstance(value, bool) or not isinstance(value, int) or value < 1999 for value in starts)
+        or starts != sorted(set(starts))
+    ):
+        raise ConfigError("model.historical_calibration.sensitivity_start_seasons must be unique increasing seasons from 1999 onward")
+    for key in ("brier_event_cdf_levels", "interval_levels"):
+        levels = calibration[key]
+        if not isinstance(levels, list) or not levels or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value < 1 for value in levels):
+            raise ConfigError(f"model.historical_calibration.{key} must contain probabilities strictly between zero and one")
+        if levels != sorted(set(levels)):
+            raise ConfigError(f"model.historical_calibration.{key} must be unique and increasing")
+    for key in ("bootstrap_confidence_level", "minimum_bootstrap_success_rate"):
+        value = calibration[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value < 1:
+            raise ConfigError(f"model.historical_calibration.{key} must be strictly between zero and one")
+    for key in ("minimum_holdout_player_seasons_per_stat", "minimum_sensitivity_player_seasons_per_stat", "mean_calibration_bins"):
+        value = calibration[key]
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ConfigError(f"model.historical_calibration.{key} must be a positive integer")
+    for key in (
+        "max_holdout_nll_regret_per_player_season", "max_brier_calibration_gap",
+        "max_interval_coverage_error", "max_abs_relative_bias",
+        "max_sensitivity_log_dispersion_delta",
+    ):
+        _positive(calibration[key], f"model.historical_calibration.{key}", allow_zero=True)
+    for key in ("max_brier_calibration_gap", "max_interval_coverage_error", "max_abs_relative_bias"):
+        if calibration[key] > 1:
+            raise ConfigError(f"model.historical_calibration.{key} cannot exceed one")
+    bounds = calibration["dispersion_bounds"]
+    if not isinstance(bounds, dict):
+        raise ConfigError("model.historical_calibration.dispersion_bounds must be a TOML table")
+    _assert_keys(bounds, set(_TARGET_STATS), "model.historical_calibration.dispersion_bounds")
+    missing_bounds = sorted(_TARGET_STATS - set(bounds))
+    if missing_bounds:
+        raise ConfigError(f"Missing dispersion bound(s) for: {', '.join(missing_bounds)}")
+    for stat, stat_bounds in bounds.items():
+        if (
+            not isinstance(stat_bounds, list) or len(stat_bounds) != 2
+            or any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in stat_bounds)
+            or not 0 < stat_bounds[0] < stat_bounds[1]
+        ):
+            raise ConfigError(f"model.historical_calibration.dispersion_bounds.{stat} must be [positive_min, larger_max]")
 
 
 def load_config(path: str | Path) -> PipelineConfig:

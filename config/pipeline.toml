@@ -62,6 +62,30 @@ on_calibration_failure = "fail"
 bootstrap_samples = 500
 random_seed = 20260825
 
+[model.historical_calibration]
+sensitivity_start_seasons = [2011, 2016, 2021]
+bootstrap_confidence_level = 0.90
+minimum_holdout_player_seasons_per_stat = 30
+minimum_sensitivity_player_seasons_per_stat = 25
+brier_event_cdf_levels = [0.25, 0.50, 0.75]
+interval_levels = [0.50, 0.80, 0.90]
+mean_calibration_bins = 10
+max_holdout_nll_regret_per_player_season = 0.05
+max_brier_calibration_gap = 0.10
+max_interval_coverage_error = 0.10
+max_abs_relative_bias = 0.10
+max_sensitivity_log_dispersion_delta = 1.0
+minimum_bootstrap_success_rate = 0.90
+
+[model.historical_calibration.dispersion_bounds]
+passing_yards = [0.05, 1000.0]
+passing_touchdowns = [0.05, 1000.0]
+rushing_yards = [0.05, 1000.0]
+rushing_touchdowns = [0.05, 1000.0]
+receiving_yards = [0.05, 1000.0]
+receiving_touchdowns = [0.05, 1000.0]
+receptions = [0.05, 1000.0]
+
 [aggregation]
 minimum_sources = 1
 renormalize_available_source_weights = true

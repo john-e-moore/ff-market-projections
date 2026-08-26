@@ -70,6 +70,32 @@ errors, implausible totals, insufficient calibration cohorts, or any look-ahead
 feature. Baseline eligibility uses prior-season opportunity only; missing opportunity
 is preserved as missing and never converted to zero.
 
+## Phase 6A historical distribution calibration
+
+After historical preparation succeeds, calibrate historical predictive dispersion:
+
+```bash
+python scripts/calibrate_distributions.py --run-dir runs/RUN_ID
+```
+
+The command reads only the run-scoped effective config and
+`historical_backtest_predictions.csv`. It holds every preseason baseline mean fixed,
+fits one recency-weighted negative-binomial dispersion per stat using only seasons
+before the configured holdout, and atomically writes `dispersion_calibration.csv` and
+`historical_calibration.json`.
+
+The JSON report includes grouped season/player bootstrap uncertainty in log dispersion,
+the 2011+/2016+/2021+ sensitivity windows, holdout likelihood and threshold Brier
+diagnostics, discrete predictive-interval coverage, mean-bin calibration, bias, and
+position/availability cohorts. Signed negative yardage outcomes are counted and
+excluded from the negative-binomial likelihood without clipping. Insufficient cohorts,
+optimizer failures, bound hits, unstable sensitivity fits, irreproducible bootstrap
+results, or failed holdout tolerances stop the stage and preserve the failure report.
+
+Phase 6A is historical-only: it does not update dispersion from Kalshi, invert market
+probabilities into means, or write `source_projections.csv`; those behaviors belong to
+Phase 6B after separate review.
+
 ## Phase 3 market validation and normalization
 
 Validate the three collected market snapshots before any pricing or identity work:

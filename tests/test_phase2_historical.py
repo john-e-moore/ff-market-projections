@@ -45,6 +45,7 @@ def _configured_toml(*, minimum_cohort: int = 1) -> str:
         .replace("ingest_start_season = 1999", "ingest_start_season = 2019")
         .replace("calibration_start_season = 2011", "calibration_start_season = 2021")
         .replace("latest_completed_season = 2024", "latest_completed_season = 2022")
+        .replace("holdout_seasons = 3", "holdout_seasons = 1")
         .replace("minimum_player_seasons_per_stat = 200", f"minimum_player_seasons_per_stat = {minimum_cohort}")
         .replace("passing_attempts = 100", "passing_attempts = 10")
         .replace("rushing_attempts = 25", "rushing_attempts = 5")
