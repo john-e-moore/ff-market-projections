@@ -27,7 +27,6 @@ CALIBRATION_VERSION = "negative_binomial_historical_v1"
 def _config() -> dict:
     model = deepcopy(load_config(ROOT / "config/pipeline.toml").values["model"])
     model["minimum_calibration_groups"] = 4
-    model["minimum_thresholds_per_group"] = 3
     return model
 
 
@@ -35,9 +34,9 @@ def _config() -> dict:
     ("old", "new", "message"),
     [
         ('robust_loss = "soft_l1"', 'robust_loss = "linear"', "robust_loss"),
-        ("minimum_thresholds_per_group = 3", "minimum_thresholds_per_group = 1", "at least two"),
+        ("minimum_thresholds_per_group = 2", "minimum_thresholds_per_group = 1", "at least two"),
         ("passing_yards = [0.01, 10000.0]", "passing_yards = [100.0, 10.0]", "mean_bounds.passing_yards"),
-        ('kalshi_conflict_policy = "warning"', 'kalshi_conflict_policy = "ignore"', "kalshi_conflict_policy"),
+        ('current_market_conflict_policy = "warning"', 'current_market_conflict_policy = "ignore"', "current_market_conflict_policy"),
     ],
 )
 def test_current_market_configuration_rejects_unsupported_or_invalid_controls(
@@ -49,10 +48,11 @@ def test_current_market_configuration_rejects_unsupported_or_invalid_controls(
         load_config(path)
 
 
-def _dispersions(*, receiving_yards: float = 9.0) -> pd.DataFrame:
+def _dispersions(*, receiving_yards: float = 9.0, overrides: dict[str, float] | None = None) -> pd.DataFrame:
+    overrides = overrides or {}
     rows = []
     for stat in TARGET_STATS:
-        historical = receiving_yards if stat == "receiving_yards" else 6.0
+        historical = overrides.get(stat, receiving_yards if stat == "receiving_yards" else 6.0)
         lower, upper = historical / 3.0, historical * 3.0
         rows.append({
             "stat": stat,
@@ -155,16 +155,50 @@ def _narrow_historical_prior(*, receiving_yards: float = 1.5) -> pd.DataFrame:
     return dispersions
 
 
+def _narrow_prior_for(dispersions: pd.DataFrame, stats: set[str]) -> pd.DataFrame:
+    result = dispersions.copy()
+    for stat in stats:
+        target = result["stat"].eq(stat)
+        log_dispersion = math.log(float(result.loc[target, "historical_dispersion"].iloc[0]))
+        result.loc[target, "historical_dispersion_lower"] = math.exp(log_dispersion - 0.02)
+        result.loc[target, "historical_dispersion_upper"] = math.exp(log_dispersion + 0.02)
+        result.loc[target, "historical_log_dispersion_lower"] = log_dispersion - 0.02
+        result.loc[target, "historical_log_dispersion_upper"] = log_dispersion + 0.02
+    return result
+
+
+def _cross_source_curves(
+    stat: str,
+    dispersion: float,
+    thresholds: tuple[int, int],
+    means: list[float],
+) -> list[dict]:
+    rows: list[dict] = []
+    for number, mean in enumerate(means):
+        player = f"{stat} Curve {number}"
+        probabilities = negative_binomial_survival(thresholds, mean, dispersion)
+        for source, threshold, probability in zip(
+            ("draftkings", "kalshi"), thresholds, probabilities, strict=True,
+        ):
+            rows.append(_market(
+                source, player, stat, threshold, float(probability),
+                market_id=f"{source}-{stat}-{number}-{threshold}",
+            ))
+    return rows
+
+
 def test_recovers_shared_kalshi_dispersion_and_player_means_with_map_update() -> None:
     markets, true_means = _kalshi_curves()
-    result = estimate_market_means(markets, _dispersions(), _historical_report(), _config())
+    result = estimate_market_means(
+        markets, _dispersions(receiving_yards=6.0), _historical_report(), _config(),
+    )
 
     assert result.validation["status"] == "passed"
     receiving = result.dispersions.set_index("stat").loc["receiving_yards"]
-    assert receiving["method"] == "historical_plus_kalshi"
-    assert receiving["kalshi_only_dispersion"] == pytest.approx(4.0, rel=0.03)
+    assert receiving["method"] == "historical_plus_current_market_map"
+    assert receiving["current_market_only_dispersion"] == pytest.approx(4.0, rel=0.03)
     assert 4.0 < receiving["final_dispersion"] < receiving["historical_dispersion"]
-    assert receiving["kalshi_group_count"] == len(true_means)
+    assert receiving["current_market_group_count"] == len(true_means)
     assert set(result.dispersions.query("stat != 'receiving_yards'")["method"]) == {"historical_only"}
 
     projections = result.source_projections.set_index("canonical_player_id")
@@ -183,7 +217,7 @@ def test_recovers_shared_kalshi_dispersion_and_player_means_with_map_update() ->
     ).all()
 
 
-def test_prior_conflict_warning_falls_back_and_quarantines_bad_kalshi_curves() -> None:
+def test_prior_conflict_warning_uses_validated_current_market_override() -> None:
     historical = 1.5
     sportsbook_probability = float(negative_binomial_survival(1001, 900.0, historical))
     markets = pd.DataFrame.from_records([
@@ -201,28 +235,26 @@ def test_prior_conflict_warning_falls_back_and_quarantines_bad_kalshi_curves() -
 
     receiving = result.dispersions.set_index("stat").loc["receiving_yards"]
     assert result.validation["status"] == "passed"
-    assert receiving["method"] == "historical_only"
-    assert receiving["final_dispersion"] == pytest.approx(historical)
-    assert receiving["fallback_reason"] == "kalshi_map_validation_failed"
-    assert receiving["kalshi_only_dispersion"] == pytest.approx(20.0, rel=0.05)
-    assert receiving["kalshi_logit_rmse"] > _config()["current_market"]["max_kalshi_logit_rmse"]
+    assert receiving["method"] == "current_market_conflict_override"
+    assert receiving["final_dispersion"] == pytest.approx(20.0, rel=0.05)
+    assert receiving["fallback_reason"] == "historical_map_misspecification_current_market_override"
+    assert receiving["current_market_only_dispersion"] == pytest.approx(20.0, rel=0.05)
+    assert receiving["current_market_map_logit_rmse"] > _config()["current_market"]["max_current_market_logit_rmse"]
 
     projections = result.source_projections.set_index(["source", "canonical_player_name"])
     assert projections.loc[("draftkings", "Sportsbook Receiver"), "quality_status"] == "passed"
     kalshi = result.source_projections.query("source == 'kalshi'")
-    assert set(kalshi["quality_status"]) == {"excluded"}
-    assert kalshi["exclusion_reason"].str.contains("kalshi_curve_residual_exceeds_limit").all()
-    assert kalshi["exclusion_reason"].str.contains("kalshi_curve_holdout_exceeds_limit").all()
+    assert set(kalshi["quality_status"]) == {"passed"}
 
     checks = {check["name"]: check for check in result.validation["checks"]}
-    assert checks["model.receiving_yards.kalshi_curve_residual"]["severity"] == "warning"
-    assert checks["model.receiving_yards.kalshi_threshold_holdout"]["severity"] == "warning"
-    assert checks["model.kalshi_curves_quarantined"]["details"]["curves"] == len(kalshi)
+    assert checks["model.receiving_yards.current_market_map_curve_residual"]["severity"] == "warning"
+    assert checks["model.receiving_yards.current_market_map_threshold_holdout"]["severity"] == "warning"
+    assert checks["model.kalshi_curves_quarantined"]["details"]["curves"] == 0
 
 
 def test_prior_conflict_fail_policy_remains_a_hard_failure() -> None:
     config = _config()
-    config["current_market"]["kalshi_conflict_policy"] = "fail"
+    config["current_market"]["current_market_conflict_policy"] = "fail"
     result = estimate_market_means(
         _steep_kalshi_curves(), _narrow_historical_prior(), _historical_report(), config,
     )
@@ -231,9 +263,57 @@ def test_prior_conflict_fail_policy_remains_a_hard_failure() -> None:
     checks = {check["name"]: check for check in result.validation["checks"]}
     assert result.validation["status"] == "failed"
     assert receiving["method"] == "historical_only"
-    assert receiving["fallback_reason"] == "kalshi_map_validation_failed"
-    assert checks["model.receiving_yards.kalshi_curve_residual"]["severity"] == "error"
-    assert checks["model.receiving_yards.kalshi_threshold_holdout"]["severity"] == "error"
+    assert receiving["fallback_reason"] == "current_market_historical_conflict"
+    assert checks["model.receiving_yards.current_market_map_curve_residual"]["severity"] == "error"
+    assert checks["model.receiving_yards.current_market_map_threshold_holdout"]["severity"] == "error"
+
+
+def test_current_market_shape_keeps_near_even_means_close_to_lines() -> None:
+    markets = pd.DataFrame.from_records([
+        *_cross_source_curves("passing_yards", 18.0, (3500, 4000), [3650.0, 3750.0, 3850.0, 3950.0]),
+        *_cross_source_curves("receptions", 6.0, (80, 100), [86.0, 90.0, 94.0, 98.0]),
+        _market("fanduel", "Drake Maye", "passing_yards", 3751, 0.5, market_id="fd-maye-3750"),
+        _market("draftkings", "Trey McBride", "receptions", 98, 0.505, market_id="dk-mcbride-97.5"),
+    ])
+    dispersions = _narrow_prior_for(
+        _dispersions(overrides={"passing_yards": 1.321611, "receptions": 2.070899}),
+        {"passing_yards", "receptions"},
+    )
+
+    result = estimate_market_means(markets, dispersions, _historical_report(), _config())
+
+    assert result.validation["status"] == "passed"
+    projections = result.source_projections.set_index(["source", "canonical_player_name", "stat"])
+    maye = projections.loc[("fanduel", "Drake Maye", "passing_yards"), "mean"]
+    mcbride = projections.loc[("draftkings", "Trey McBride", "receptions"), "mean"]
+    assert 3750.5 < maye < 3900.0
+    assert 97.5 < mcbride < 105.0
+    checks = {check["name"]: check for check in result.validation["checks"]}
+    assert checks["model.near_even_market_mean_plausibility"]["passed"]
+    fitted = result.dispersions.set_index("stat")
+    assert fitted.loc["passing_yards", "method"] == "current_market_conflict_override"
+    assert fitted.loc["receptions", "method"] == "current_market_conflict_override"
+
+
+def test_near_even_plausibility_gate_rejects_historical_shape_failure() -> None:
+    config = _config()
+    config["dispersion_mode"] = "historical_only"
+    markets = pd.DataFrame.from_records([
+        _market("draftkings", "Trey McBride", "receptions", 98, 0.5, market_id="dk-bad-shape"),
+    ])
+
+    result = estimate_market_means(
+        markets, _dispersions(overrides={"receptions": 2.070899}), _historical_report(), config,
+    )
+
+    assert result.validation["status"] == "failed"
+    check = next(
+        value for value in result.validation["checks"]
+        if value["name"] == "model.near_even_market_mean_plausibility"
+    )
+    assert not check["passed"]
+    assert check["details"]["violations"] == 1
+    assert check["details"]["samples"][0]["canonical_player_name"] == "Trey McBride"
 
 
 def test_bad_source_curve_is_quarantined_without_invalidating_good_curves() -> None:
@@ -292,6 +372,7 @@ def test_groups_below_minimum_threshold_count_cannot_update_dispersion() -> None
     markets, _ = _kalshi_curves()
     markets = markets.groupby("canonical_player_id", sort=False).head(2).reset_index(drop=True)
     config = _config()
+    config["minimum_thresholds_per_group"] = 3
     # This test isolates update eligibility from the deliberately misspecified
     # historical-dispersion source residuals produced by the two-point curves.
     config["current_market"]["max_kalshi_logit_rmse"] = 2.0
@@ -301,8 +382,8 @@ def test_groups_below_minimum_threshold_count_cannot_update_dispersion() -> None
     assert result.validation["status"] == "passed"
     assert receiving["method"] == "historical_only"
     assert receiving["final_dispersion"] == receiving["historical_dispersion"]
-    assert receiving["kalshi_group_count"] == 0
-    assert receiving["fallback_reason"] == "insufficient_eligible_kalshi_groups"
+    assert receiving["current_market_group_count"] == 0
+    assert receiving["fallback_reason"] == "insufficient_eligible_current_market_groups"
 
 
 def test_excluded_quotes_never_contribute_and_remain_auditable() -> None:
@@ -335,7 +416,7 @@ def test_duplicate_kalshi_thresholds_and_impossible_mean_bounds_fail_validation(
         _dispersions(), _historical_report(), _config(),
     )
     assert duplicated.validation["status"] == "failed"
-    check = next(value for value in duplicated.validation["checks"] if value["name"] == "model.kalshi_thresholds_unique")
+    check = next(value for value in duplicated.validation["checks"] if value["name"] == "model.current_market_thresholds_unique_within_source")
     assert not check["passed"]
 
     config = _config()

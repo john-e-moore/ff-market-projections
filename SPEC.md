@@ -298,9 +298,9 @@ reject_ambiguous_integer_lines = true
 
 [model]
 family = "negative_binomial"
-dispersion_mode = "historical_with_kalshi_update"
-minimum_calibration_groups = 8
-minimum_thresholds_per_group = 3
+dispersion_mode = "historical_with_current_market_update"
+minimum_calibration_groups = 4
+minimum_thresholds_per_group = 2
 probability_floor = 0.02
 probability_ceiling = 0.98
 robust_loss = "soft_l1"
@@ -603,20 +603,22 @@ Use rolling-origin evaluation. The final configured holdout seasons are never us
 
 Bootstrap target seasons and players in groups with a fixed seed to obtain uncertainty in `log(r_hist_stat)`. These bootstrap bounds describe calibration uncertainty, not player forecast confidence.
 
-#### Current-market update from Kalshi
+#### Current-market shape update
 
-Eligible multi-threshold Kalshi curves may update the historical dispersion but are no longer required to identify it:
+Eligible multi-threshold current-market curves may update the historical dispersion. Current curves are assembled at player/stat grain from all included DraftKings, FanDuel, and Kalshi quotes with distinct thresholds:
 
-1. Select player/stat groups with the configured number of distinct, eligible, two-sided thresholds.
-2. Exclude probabilities outside the configured floor/ceiling and quotes wider than the spread limit.
-3. Jointly fit nuisance `mu_player` values and `log(r_stat)` to robust logit-probability residuals.
-4. Penalize departure from `log(r_hist_stat)` using the historical bootstrap variance. This is an empirical-Bayes/MAP update: the current curve supplies likelihood and the historical calibration supplies the prior.
-5. If current curves are insufficient, use `r_hist_stat` unchanged and label the method `historical_only`.
-6. If curves are sufficient but conflict materially with historical calibration, retain both estimates, fail or warn according to configured thresholds, and publish sensitivity results. Do not silently average them.
+1. Select player/stat groups with the configured number of distinct, eligible thresholds. A group may span sources; preserve every source quote and never average raw odds, probabilities, or lines.
+2. Exclude probabilities outside the configured floor/ceiling. Kalshi rows must already satisfy the configured two-sided quote and spread rules.
+3. Jointly fit one nuisance consensus `mu_player` per group and `log(r_stat)` to robust logit-probability residuals. The nuisance mean identifies curve shape only; it is not published or used as a source consensus.
+4. Quarantine groups that fail curve-residual or leave-one-threshold-out limits, then refit if the retained group minimum is still met.
+5. Fit both a current-market-only dispersion and an empirical-Bayes/MAP dispersion penalized toward `log(r_hist_stat)` using the historical bootstrap variance.
+6. Use the MAP dispersion only when it reproduces the current curve and the market-only/historical log-dispersion gap is within the configured conflict tolerance.
+7. If the historical prior is materially misspecified but the market-only fit passes every optimizer, residual, holdout, and bounds check, the default `warning` policy uses the market-only dispersion and labels it `current_market_conflict_override`. The `fail` policy stops instead.
+8. If current curves are insufficient, use `r_hist_stat` unchanged and label the method `historical_only`.
 
-Write historical, Kalshi-only, and final dispersion values, bootstrap bounds, sample sizes, objective values, convergence status, update method, and validation metrics to `dispersion_calibration.csv` and `historical_calibration.json`.
+Write historical, current-market-only, MAP, and final dispersion values, bootstrap bounds, group quarantine, sample sizes, objective values, convergence status, update method, and validation metrics to `dispersion_calibration.csv` and `historical_calibration.json`.
 
-The checked-in Kalshi example contains many one-sided contracts, so the historical path is essential. One-sided quotes remain excluded from the point-estimate update by default. Historical calibration data and a Kalshi shape update do not receive consensus source weights; they define the shared probability-to-mean conversion applied to all three current sources.
+The checked-in Kalshi example contains many one-sided contracts, so sportsbooks supplement the available current curve without relaxing Kalshi eligibility. Historical calibration and current-market shape fitting do not receive consensus source weights; they define the shared probability-to-mean conversion applied to all current sources.
 
 If historical calibration lacks enough eligible out-of-sample player-seasons, performs poorly on holdout coverage, does not converge, or lands on a parameter bound, fail that stat. Do not weaken cohort filters or invent a fixed constant merely to produce output.
 
@@ -644,10 +646,11 @@ At minimum:
 - all means and dispersions are finite, positive, and within configured per-stat bounds
 - historical baselines for season `t` use no field from season `t` or later
 - rolling holdout likelihood, calibration, and predictive-interval coverage meet configured tolerances
-- the final dispersion records whether it is `historical_only` or `historical_plus_kalshi`
+- the final dispersion records whether it is `historical_only`, `historical_plus_current_market_map`, or `current_market_conflict_override`
 - the root solver/optimizer converged
 - fitted survival probabilities are monotone non-increasing across thresholds
 - back-substitution matches a single sportsbook target within tolerance
+- near-even sportsbook probabilities cannot imply a mean materially separated from the posted half-point median proxy
 - Kalshi residual and holdout metrics are below configured limits
 - no excluded quote contributed to a fit
 - bootstrap output is reproducible with the configured seed
@@ -785,7 +788,7 @@ Examples of warnings include expected unavailable FanDuel coupon placeholders, s
 - negative-binomial parameterization, survival probability, inversion, monotonicity, and bounds
 - lag-only historical baseline construction and look-ahead leakage guards
 - synthetic historical dispersion recovery and grouped bootstrap reproducibility
-- empirical-Bayes Kalshi update and historical-only fallback
+- empirical-Bayes current-market update, validated conflict override, and historical-only fallback
 - source-weight renormalization and missing-source behavior
 - every scoring mode and missing-stat policy
 - deterministic run IDs/hashes where applicable
@@ -833,7 +836,7 @@ The MVP is complete when a clean environment can:
 5. Pass each validation gate.
 6. Reconcile names with no unresolved collision.
 7. Recompute odds and de-vig sportsbook markets.
-8. Calibrate historical predictive dispersion, optionally update it with eligible Kalshi curves, and produce validated source-level means.
+8. Calibrate historical predictive dispersion, update or override it with validated current-market curves when eligible, and produce validated source-level means.
 9. Aggregate sources with equal default weights.
 10. Apply all four reception-scoring settings without silently filling missing stats.
 11. Build and read back the Excel workbook.

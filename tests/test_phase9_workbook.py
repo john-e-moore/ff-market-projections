@@ -27,7 +27,7 @@ def _write_inputs(run_dir: Path) -> None:
     pd.DataFrame([{"run_id": run_dir.name, "source": "draftkings", "canonical_player_id": "p1", "stat": "receiving_yards", "mean": 1000.0, "source_market_ids": "https://example.test/market"}]).to_csv(artifacts / "source_projections.csv", index=False)
     pd.DataFrame([{"source": "draftkings", "raw_player_name": "Long Name", "canonical_player_name": "An Extremely Long Player Name For Workbook Testing", "canonical_threshold": 999.5, "modeling_probability": 0.5, "inclusion_status": "included", "exclusion_reason": ""}]).to_csv(artifacts / "priced_markets.csv", index=False)
     pd.DataFrame([{"source": "draftkings", "raw_player_name": "Long Name", "canonical_player_id": "p1", "canonical_player_name": "An Extremely Long Player Name For Workbook Testing", "match_method": "exact", "match_score": 100.0, "review_status": "accepted"}]).to_csv(artifacts / "player_map.csv", index=False)
-    pd.DataFrame([{"stat": "receiving_yards", "historical_dispersion": 5.0, "final_dispersion": 6.0, "method": "historical_plus_kalshi", "status": "passed"}]).to_csv(artifacts / "dispersion_calibration.csv", index=False)
+    pd.DataFrame([{"stat": "receiving_yards", "historical_dispersion": 5.0, "final_dispersion": 6.0, "method": "historical_plus_current_market_map", "status": "passed"}]).to_csv(artifacts / "dispersion_calibration.csv", index=False)
     (artifacts / "scoring_validation.json").write_text(json.dumps({"status": "passed", "checks": [{"name": "scoring.test", "passed": True, "severity": "error", "message": "fine", "details": {}}]}), encoding="utf-8")
 
 

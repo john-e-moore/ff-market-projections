@@ -1,4 +1,4 @@
-"""Kalshi dispersion updates and auditable source-level mean estimation."""
+"""Current-market dispersion updates and auditable source-level mean estimation."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ from .distributions import (
 from .historical import TARGET_STATS
 
 
-MARKET_UPDATE_VERSION = "negative_binomial_kalshi_map_v2"
-SOURCE_ESTIMATION_VERSION = "negative_binomial_source_means_v2"
+MARKET_UPDATE_VERSION = "negative_binomial_current_market_v3"
+SOURCE_ESTIMATION_VERSION = "negative_binomial_source_means_v3"
 _SOURCES = frozenset({"draftkings", "fanduel", "kalshi"})
 _MARKET_COLUMNS = {
     "run_id", "season", "source", "source_market_id", "snapshot_utc", "raw_player_name",
@@ -241,8 +241,10 @@ def fit_shared_kalshi_dispersion(
 ) -> SharedDispersionFit:
     """Jointly fit nuisance player means and a shared log dispersion.
 
-    ``prior_log_sd=None`` yields the Kalshi-only fit. A positive value adds the
-    Gaussian historical prior penalty used for the empirical-Bayes/MAP update.
+    The public name is retained for compatibility, but groups may contain any
+    eligible current-market quotes. ``prior_log_sd=None`` yields the market-only
+    fit. A positive value adds the Gaussian historical prior penalty used for the
+    empirical-Bayes/MAP update.
     """
 
     if not groups:
@@ -382,6 +384,33 @@ def _leave_one_threshold_out(
     }
 
 
+def _shared_curve_holdout(
+    groups: dict[str, tuple[np.ndarray, np.ndarray]],
+    dispersion: float,
+    mean_bounds: tuple[float, float],
+    current_config: dict[str, Any],
+    robust_loss: str,
+) -> dict[str, Any]:
+    values: list[float] = []
+    failures = 0
+    count = 0
+    for thresholds, probabilities in groups.values():
+        group = _leave_one_threshold_out(
+            thresholds, probabilities, dispersion, mean_bounds, current_config, robust_loss,
+        )
+        failures += int(group["failed_fits"])
+        if group["logit_mae"] is not None:
+            values.extend([float(group["logit_mae"])] * int(group["count"]))
+            count += int(group["count"])
+    array = np.asarray(values, dtype=float)
+    return {
+        "count": count,
+        "failed_fits": failures,
+        "logit_mae": float(np.mean(array)) if len(array) else None,
+        "logit_rmse": float(np.sqrt(np.mean(array**2))) if len(array) else None,
+    }
+
+
 def _update_dispersions(
     markets: pd.DataFrame,
     dispersions: pd.DataFrame,
@@ -393,49 +422,49 @@ def _update_dispersions(
     current = model_config["current_market"]
     calibration = model_config["historical_calibration"]
     update_reports: dict[str, Any] = {}
-    eligible_kalshi = markets.loc[
-        (markets["source"] == "kalshi") & (markets["model_inclusion_status"] == "included")
-    ].copy()
+    eligible_market = markets.loc[markets["model_inclusion_status"] == "included"].copy()
 
-    duplicate_thresholds = eligible_kalshi.duplicated(
-        ["run_id", "season", "canonical_player_id", "stat", "canonical_threshold"], keep=False
+    duplicate_thresholds = eligible_market.duplicated(
+        ["run_id", "season", "source", "canonical_player_id", "stat", "canonical_threshold"],
+        keep=False,
     )
     _check(
-        checks, "model.kalshi_thresholds_unique", not duplicate_thresholds.any(),
-        "Eligible Kalshi player/stat curves contain one contract per canonical threshold",
+        checks, "model.current_market_thresholds_unique_within_source", not duplicate_thresholds.any(),
+        "Eligible current-market curves contain at most one quote per source/player/stat threshold",
         duplicate_rows=int(duplicate_thresholds.sum()),
     )
 
     for stat in TARGET_STATS:
         row = output.loc[stat]
         historical_dispersion = float(row["historical_dispersion"])
-        stat_quotes = eligible_kalshi.loc[eligible_kalshi["stat"] == stat]
+        stat_quotes = eligible_market.loc[eligible_market["stat"] == stat]
         qualified: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-        qualified_indices: list[int] = []
+        qualified_indices: dict[str, list[int]] = {}
         for player_id, group in stat_quotes.groupby("canonical_player_id", sort=True):
-            ordered = group.sort_values(["canonical_threshold", "source_market_id"])
+            ordered = group.sort_values(["canonical_threshold", "source", "source_market_id"])
             if ordered["canonical_threshold"].nunique() >= int(model_config["minimum_thresholds_per_group"]):
-                qualified[str(player_id)] = (
+                key = str(player_id)
+                qualified[key] = (
                     ordered["canonical_threshold"].to_numpy(dtype=int),
                     ordered["modeling_probability"].to_numpy(dtype=float),
                 )
-                qualified_indices.extend(int(value) for value in ordered.index)
-        if qualified_indices:
-            markets.loc[qualified_indices, "model_calibration_group_eligible"] = True
+                qualified_indices[key] = [int(value) for value in ordered.index]
 
         group_count = len(qualified)
+        initial_group_count = group_count
         quote_count = int(sum(len(value[0]) for value in qualified.values()))
         enough_groups = group_count >= int(model_config["minimum_calibration_groups"])
-        update_requested = model_config["dispersion_mode"] == "historical_with_kalshi_update"
+        update_requested = model_config["dispersion_mode"] == "historical_with_current_market_update"
         method = "historical_only"
-        fallback_reason = "dispersion_mode_historical_only" if not update_requested else "insufficient_eligible_kalshi_groups"
-        kalshi_only: SharedDispersionFit | None = None
+        fallback_reason = "dispersion_mode_historical_only" if not update_requested else "insufficient_eligible_current_market_groups"
+        market_only: SharedDispersionFit | None = None
         map_fit: SharedDispersionFit | None = None
         prior_sd: float | None = None
-        holdout = {"count": 0, "failed_fits": 0, "logit_mae": None, "logit_rmse": None}
-        residual_passed = False
-        holdout_passed = False
+        market_holdout = {"count": 0, "failed_fits": 0, "logit_mae": None, "logit_rmse": None}
+        map_holdout = {"count": 0, "failed_fits": 0, "logit_mae": None, "logit_rmse": None}
+        market_validation_passed = False
         map_validation_passed = False
+        quarantined_groups: dict[str, list[str]] = {}
 
         if update_requested and enough_groups and not duplicate_thresholds.any():
             try:
@@ -450,142 +479,193 @@ def _update_dispersions(
                     "optimizer_tolerance": float(current["optimizer_tolerance"]),
                     "max_evaluations": int(current["optimizer_max_evaluations"]),
                 }
-                kalshi_only = fit_shared_kalshi_dispersion(qualified, prior_log_sd=None, **shared_kwargs)
+                market_only = fit_shared_kalshi_dispersion(qualified, prior_log_sd=None, **shared_kwargs)
+                for group_id, (thresholds, probabilities) in qualified.items():
+                    reasons: list[str] = []
+                    curve = _fit_curve(thresholds, probabilities, market_only.dispersion, mean_bounds, model_config)
+                    group_holdout = _leave_one_threshold_out(
+                        thresholds, probabilities, market_only.dispersion, mean_bounds, current,
+                        str(model_config["robust_loss"]),
+                    )
+                    if not curve.converged or curve.bound_hit or curve.logit_rmse > float(current["max_current_market_logit_rmse"]):
+                        reasons.append("curve_residual_exceeds_limit")
+                    if (
+                        group_holdout["failed_fits"] > 0 or group_holdout["logit_mae"] is None
+                        or float(group_holdout["logit_mae"]) > float(current["max_current_market_holdout_logit_mae"])
+                    ):
+                        reasons.append("threshold_holdout_exceeds_limit")
+                    if reasons:
+                        quarantined_groups[group_id] = reasons
+                retained = {
+                    group_id: values for group_id, values in qualified.items()
+                    if group_id not in quarantined_groups
+                }
+                if quarantined_groups and len(retained) >= int(model_config["minimum_calibration_groups"]):
+                    qualified = retained
+                    group_count = len(qualified)
+                    quote_count = int(sum(len(value[0]) for value in qualified.values()))
+                    market_only = fit_shared_kalshi_dispersion(qualified, prior_log_sd=None, **shared_kwargs)
                 map_fit = fit_shared_kalshi_dispersion(qualified, prior_log_sd=prior_sd, **shared_kwargs)
             except DistributionError as exc:
-                _check(checks, f"model.{stat}.kalshi_update_inputs", False, str(exc))
-                fallback_reason = "kalshi_update_failed"
-            if kalshi_only is not None and map_fit is not None:
-                _check(checks, f"model.{stat}.kalshi_only_optimizer", kalshi_only.converged, "Kalshi-only shared-dispersion optimizer converged", **asdict(kalshi_only))
-                _check(checks, f"model.{stat}.kalshi_map_optimizer", map_fit.converged, "Kalshi MAP shared-dispersion optimizer converged", **asdict(map_fit))
+                _check(checks, f"model.{stat}.current_market_update_inputs", False, str(exc))
+                fallback_reason = "current_market_update_failed"
+            if market_only is not None and map_fit is not None:
+                _check(checks, f"model.{stat}.current_market_only_optimizer", market_only.converged, "Current-market-only shared-dispersion optimizer converged", **asdict(market_only))
+                _check(checks, f"model.{stat}.current_market_map_optimizer", map_fit.converged, "Current-market MAP shared-dispersion optimizer converged", **asdict(map_fit))
                 _check(
-                    checks, f"model.{stat}.kalshi_dispersion_bounds",
-                    not kalshi_only.dispersion_bound_hit and not map_fit.dispersion_bound_hit,
-                    "Kalshi-only and MAP dispersions are strictly inside configured bounds",
-                    kalshi_only_bound_hit=kalshi_only.dispersion_bound_hit,
+                    checks, f"model.{stat}.current_market_dispersion_bounds",
+                    not market_only.dispersion_bound_hit and not map_fit.dispersion_bound_hit,
+                    "Current-market-only and MAP dispersions are strictly inside configured bounds",
+                    market_only_bound_hit=market_only.dispersion_bound_hit,
                     map_bound_hit=map_fit.dispersion_bound_hit,
                 )
                 _check(
-                    checks, f"model.{stat}.kalshi_nuisance_mean_bounds",
-                    not kalshi_only.nuisance_mean_bound_hit and not map_fit.nuisance_mean_bound_hit,
-                    "Kalshi nuisance player means are strictly inside configured bounds",
-                    kalshi_only_bound_hit=kalshi_only.nuisance_mean_bound_hit,
+                    checks, f"model.{stat}.current_market_nuisance_mean_bounds",
+                    not market_only.nuisance_mean_bound_hit and not map_fit.nuisance_mean_bound_hit,
+                    "Current-market nuisance player means are strictly inside configured bounds",
+                    market_only_bound_hit=market_only.nuisance_mean_bound_hit,
                     map_bound_hit=map_fit.nuisance_mean_bound_hit,
                 )
-                residual_passed = map_fit.logit_rmse <= float(current["max_kalshi_logit_rmse"])
+                market_holdout = _shared_curve_holdout(
+                    qualified, market_only.dispersion, mean_bounds, current, str(model_config["robust_loss"]),
+                )
+                map_holdout = _shared_curve_holdout(
+                    qualified, map_fit.dispersion, mean_bounds, current, str(model_config["robust_loss"]),
+                )
+                market_residual_passed = market_only.logit_rmse <= float(current["max_current_market_logit_rmse"])
+                market_holdout_passed = (
+                    market_holdout["failed_fits"] == 0 and market_holdout["logit_mae"] is not None
+                    and float(market_holdout["logit_mae"]) <= float(current["max_current_market_holdout_logit_mae"])
+                )
+                market_validation_passed = market_residual_passed and market_holdout_passed
+                map_residual_passed = map_fit.logit_rmse <= float(current["max_current_market_logit_rmse"])
+                map_holdout_passed = (
+                    map_holdout["failed_fits"] == 0 and map_holdout["logit_mae"] is not None
+                    and float(map_holdout["logit_mae"]) <= float(current["max_current_market_holdout_logit_mae"])
+                )
+                map_validation_passed = map_residual_passed and map_holdout_passed
                 update_validation_severity = (
-                    "error" if current["kalshi_conflict_policy"] == "fail" else "warning"
+                    "error" if current["current_market_conflict_policy"] == "fail" else "warning"
                 )
                 _check(
-                    checks, f"model.{stat}.kalshi_curve_residual",
-                    residual_passed,
-                    "Kalshi MAP curve logit RMSE is within tolerance",
+                    checks, f"model.{stat}.current_market_only_curve_residual",
+                    market_residual_passed,
+                    "Current-market-only curve logit RMSE is within tolerance",
+                    observed=market_only.logit_rmse, maximum=float(current["max_current_market_logit_rmse"]),
+                )
+                _check(
+                    checks, f"model.{stat}.current_market_only_threshold_holdout", market_holdout_passed,
+                    "Leave-one-threshold-out current-market-only logit MAE is within tolerance",
+                    observed=market_holdout["logit_mae"], maximum=float(current["max_current_market_holdout_logit_mae"]),
+                    failed_fits=market_holdout["failed_fits"], predictions=market_holdout["count"],
+                )
+                _check(
+                    checks, f"model.{stat}.current_market_map_curve_residual",
+                    map_residual_passed,
+                    "Current-market MAP curve logit RMSE is within tolerance",
                     severity=update_validation_severity,
-                    observed=map_fit.logit_rmse, maximum=float(current["max_kalshi_logit_rmse"]),
-                )
-                holdout_values: list[float] = []
-                holdout_failures = 0
-                holdout_count = 0
-                for thresholds, probabilities in qualified.values():
-                    group_holdout = _leave_one_threshold_out(
-                        thresholds, probabilities, map_fit.dispersion, mean_bounds, current,
-                        str(model_config["robust_loss"]),
-                    )
-                    holdout_failures += int(group_holdout["failed_fits"])
-                    if group_holdout["logit_mae"] is not None:
-                        holdout_values.extend([float(group_holdout["logit_mae"])] * int(group_holdout["count"]))
-                        holdout_count += int(group_holdout["count"])
-                holdout = {
-                    "count": holdout_count,
-                    "failed_fits": holdout_failures,
-                    "logit_mae": float(np.mean(holdout_values)) if holdout_values else None,
-                }
-                holdout_passed = (
-                    holdout_failures == 0 and holdout["logit_mae"] is not None
-                    and float(holdout["logit_mae"]) <= float(current["max_kalshi_holdout_logit_mae"])
+                    observed=map_fit.logit_rmse, maximum=float(current["max_current_market_logit_rmse"]),
                 )
                 _check(
-                    checks, f"model.{stat}.kalshi_threshold_holdout", holdout_passed,
-                    "Leave-one-threshold-out Kalshi logit MAE is within tolerance",
+                    checks, f"model.{stat}.current_market_map_threshold_holdout", map_holdout_passed,
+                    "Leave-one-threshold-out current-market MAP logit MAE is within tolerance",
                     severity=update_validation_severity,
-                    observed=holdout["logit_mae"], maximum=float(current["max_kalshi_holdout_logit_mae"]),
-                    failed_fits=holdout_failures, predictions=holdout_count,
+                    observed=map_holdout["logit_mae"], maximum=float(current["max_current_market_holdout_logit_mae"]),
+                    failed_fits=map_holdout["failed_fits"], predictions=map_holdout["count"],
                 )
-                delta = abs(kalshi_only.log_dispersion - math.log(historical_dispersion))
-                conflict_passed = delta <= float(current["max_kalshi_log_dispersion_delta"])
+                delta = abs(market_only.log_dispersion - math.log(historical_dispersion))
+                conflict_passed = delta <= float(current["max_current_market_log_dispersion_delta"])
                 _check(
-                    checks, f"model.{stat}.kalshi_historical_conflict", conflict_passed,
-                    "Kalshi-only and historical log dispersions are within the configured conflict threshold",
-                    severity="error" if current["kalshi_conflict_policy"] == "fail" else "warning",
-                    observed=delta, maximum=float(current["max_kalshi_log_dispersion_delta"]),
-                    historical_dispersion=historical_dispersion, kalshi_only_dispersion=kalshi_only.dispersion,
+                    checks, f"model.{stat}.current_market_historical_conflict", conflict_passed,
+                    "Current-market-only and historical log dispersions are within the configured conflict threshold",
+                    severity="error" if current["current_market_conflict_policy"] == "fail" else "warning",
+                    observed=delta, maximum=float(current["max_current_market_log_dispersion_delta"]),
+                    historical_dispersion=historical_dispersion, current_market_only_dispersion=market_only.dispersion,
                 )
                 optimizer_valid = (
-                    kalshi_only.converged and map_fit.converged
-                    and not kalshi_only.dispersion_bound_hit and not map_fit.dispersion_bound_hit
-                    and not kalshi_only.nuisance_mean_bound_hit and not map_fit.nuisance_mean_bound_hit
+                    market_only.converged and map_fit.converged
+                    and not market_only.dispersion_bound_hit and not map_fit.dispersion_bound_hit
+                    and not market_only.nuisance_mean_bound_hit and not map_fit.nuisance_mean_bound_hit
                 )
-                conflict_allows_update = (
-                    conflict_passed or current["kalshi_conflict_policy"] == "warning"
-                )
-                map_validation_passed = residual_passed and holdout_passed
-                if optimizer_valid and map_validation_passed and conflict_allows_update:
-                    method = "historical_plus_kalshi"
+                if optimizer_valid and map_validation_passed and conflict_passed:
+                    method = "historical_plus_current_market_map"
                     fallback_reason = ""
-                elif optimizer_valid and not map_validation_passed:
-                    fallback_reason = "kalshi_map_validation_failed"
-                elif optimizer_valid and not conflict_allows_update:
-                    fallback_reason = "kalshi_historical_conflict"
+                elif (
+                    optimizer_valid and market_validation_passed
+                    and current["current_market_conflict_policy"] == "warning"
+                ):
+                    method = "current_market_conflict_override"
+                    fallback_reason = "historical_map_misspecification_current_market_override"
+                elif optimizer_valid and not market_validation_passed:
+                    fallback_reason = "current_market_validation_failed"
+                elif optimizer_valid and current["current_market_conflict_policy"] == "fail":
+                    fallback_reason = "current_market_historical_conflict"
                 else:
-                    fallback_reason = "kalshi_update_optimizer_failed"
+                    fallback_reason = "current_market_update_optimizer_failed"
         elif update_requested:
             _check(
-                checks, f"model.{stat}.kalshi_calibration_groups", enough_groups,
-                "Eligible multi-threshold Kalshi groups meet the configured update minimum",
+                checks, f"model.{stat}.current_market_calibration_groups", enough_groups,
+                "Eligible multi-threshold current-market groups meet the configured update minimum",
                 severity="warning", observed=group_count,
                 minimum=int(model_config["minimum_calibration_groups"]),
                 minimum_thresholds_per_group=int(model_config["minimum_thresholds_per_group"]),
             )
 
-        final_dispersion = map_fit.dispersion if method == "historical_plus_kalshi" and map_fit is not None else historical_dispersion
+        retained_indices = [
+            index for group_id in qualified for index in qualified_indices[group_id]
+        ]
+        if retained_indices:
+            markets.loc[retained_indices, "model_calibration_group_eligible"] = True
+
+        if method == "historical_plus_current_market_map" and map_fit is not None:
+            final_dispersion = map_fit.dispersion
+        elif method == "current_market_conflict_override" and market_only is not None:
+            final_dispersion = market_only.dispersion
+        else:
+            final_dispersion = historical_dispersion
         output.loc[stat, "method"] = method
         output.loc[stat, "dispersion_source"] = method
         output.loc[stat, "final_dispersion"] = final_dispersion
         output.loc[stat, "market_update_version"] = MARKET_UPDATE_VERSION
-        output.loc[stat, "kalshi_only_dispersion"] = kalshi_only.dispersion if kalshi_only else None
-        output.loc[stat, "kalshi_only_log_dispersion"] = kalshi_only.log_dispersion if kalshi_only else None
-        output.loc[stat, "kalshi_map_dispersion"] = map_fit.dispersion if map_fit else None
-        output.loc[stat, "kalshi_map_log_dispersion"] = map_fit.log_dispersion if map_fit else None
-        output.loc[stat, "kalshi_group_count"] = group_count
-        output.loc[stat, "kalshi_quote_count"] = quote_count
-        output.loc[stat, "kalshi_prior_log_sd"] = prior_sd
-        output.loc[stat, "kalshi_prior_log_variance"] = prior_sd**2 if prior_sd is not None else None
-        output.loc[stat, "kalshi_only_objective"] = kalshi_only.objective_total if kalshi_only else None
-        output.loc[stat, "kalshi_map_objective"] = map_fit.objective_total if map_fit else None
-        output.loc[stat, "kalshi_logit_rmse"] = map_fit.logit_rmse if map_fit else None
-        output.loc[stat, "kalshi_holdout_logit_mae"] = holdout.get("logit_mae")
-        output.loc[stat, "kalshi_optimizer_converged"] = map_fit.converged if map_fit else None
-        output.loc[stat, "kalshi_dispersion_bound_hit"] = map_fit.dispersion_bound_hit if map_fit else None
-        output.loc[stat, "kalshi_nuisance_mean_bound_hit"] = map_fit.nuisance_mean_bound_hit if map_fit else None
-        output.loc[stat, "kalshi_map_validation_passed"] = map_validation_passed if map_fit else None
+        output.loc[stat, "current_market_only_dispersion"] = market_only.dispersion if market_only else None
+        output.loc[stat, "current_market_only_log_dispersion"] = market_only.log_dispersion if market_only else None
+        output.loc[stat, "current_market_map_dispersion"] = map_fit.dispersion if map_fit else None
+        output.loc[stat, "current_market_map_log_dispersion"] = map_fit.log_dispersion if map_fit else None
+        output.loc[stat, "current_market_group_count"] = group_count
+        output.loc[stat, "current_market_quote_count"] = quote_count
+        output.loc[stat, "current_market_prior_log_sd"] = prior_sd
+        output.loc[stat, "current_market_prior_log_variance"] = prior_sd**2 if prior_sd is not None else None
+        output.loc[stat, "current_market_only_objective"] = market_only.objective_total if market_only else None
+        output.loc[stat, "current_market_map_objective"] = map_fit.objective_total if map_fit else None
+        output.loc[stat, "current_market_only_logit_rmse"] = market_only.logit_rmse if market_only else None
+        output.loc[stat, "current_market_map_logit_rmse"] = map_fit.logit_rmse if map_fit else None
+        output.loc[stat, "current_market_only_holdout_logit_mae"] = market_holdout.get("logit_mae")
+        output.loc[stat, "current_market_map_holdout_logit_mae"] = map_holdout.get("logit_mae")
+        output.loc[stat, "current_market_optimizer_converged"] = map_fit.converged if map_fit else None
+        output.loc[stat, "current_market_dispersion_bound_hit"] = map_fit.dispersion_bound_hit if map_fit else None
+        output.loc[stat, "current_market_nuisance_mean_bound_hit"] = map_fit.nuisance_mean_bound_hit if map_fit else None
+        output.loc[stat, "current_market_only_validation_passed"] = market_validation_passed if market_only else None
+        output.loc[stat, "current_market_map_validation_passed"] = map_validation_passed if map_fit else None
         output.loc[stat, "fallback_reason"] = fallback_reason
 
         update_reports[stat] = {
             "method": method,
             "fallback_reason": fallback_reason,
             "historical_dispersion": historical_dispersion,
-            "kalshi_only_fit": asdict(kalshi_only) if kalshi_only else None,
-            "kalshi_map_fit": asdict(map_fit) if map_fit else None,
+            "current_market_only_fit": asdict(market_only) if market_only else None,
+            "current_market_map_fit": asdict(map_fit) if map_fit else None,
             "final_dispersion": final_dispersion,
             "eligible_groups": group_count,
+            "initial_eligible_groups": initial_group_count,
             "eligible_quotes": quote_count,
+            "quarantined_groups": quarantined_groups,
             "minimum_groups": int(model_config["minimum_calibration_groups"]),
             "minimum_thresholds_per_group": int(model_config["minimum_thresholds_per_group"]),
             "prior_log_sd": prior_sd,
-            "curve_residual_passed": residual_passed if map_fit else None,
-            "threshold_holdout_passed": holdout_passed if map_fit else None,
-            "map_validation_passed": map_validation_passed if map_fit else None,
-            "threshold_holdout": holdout,
+            "current_market_only_validation_passed": market_validation_passed if market_only else None,
+            "current_market_map_validation_passed": map_validation_passed if map_fit else None,
+            "current_market_only_threshold_holdout": market_holdout,
+            "current_market_map_threshold_holdout": map_holdout,
         }
     return output.reset_index(drop=True), update_reports
 
@@ -875,6 +955,44 @@ def _estimate_source_projections(
         "Sportsbook back-substitution residuals are within tolerance",
         observed=max_sportsbook, maximum=float(current["max_sportsbook_probability_residual"]),
     )
+    near_even_lower, near_even_upper = (
+        float(value) for value in current["near_even_probability_band"]
+    )
+    near_even = frame.loc[
+        frame["source"].isin({"draftkings", "fanduel"})
+        & frame["model_inclusion_status"].eq("included")
+        & frame["source_projection_quality_status"].eq("passed")
+        & frame["modeling_probability"].between(near_even_lower, near_even_upper)
+    ].copy()
+    implausible_near_even: list[dict[str, Any]] = []
+    for _, row in near_even.iterrows():
+        median_proxy = float(row["canonical_threshold"]) - 0.5
+        shift = abs(float(row["source_projection_mean"]) - median_proxy)
+        maximum = max(
+            float(current["max_near_even_mean_shift_absolute"]),
+            float(current["max_near_even_mean_shift_relative"]) * median_proxy,
+        )
+        if shift > maximum:
+            implausible_near_even.append({
+                "source": _text(row["source"]),
+                "canonical_player_name": _text(row["canonical_player_name"]),
+                "stat": _text(row["stat"]),
+                "modeling_probability": float(row["modeling_probability"]),
+                "median_proxy": median_proxy,
+                "inferred_mean": float(row["source_projection_mean"]),
+                "absolute_shift": shift,
+                "maximum_shift": maximum,
+                "dispersion_source": _text(row["dispersion_source"]),
+            })
+    _check(
+        checks, "model.near_even_market_mean_plausibility", not implausible_near_even,
+        "Near-even sportsbook lines do not imply means materially separated from their median proxies",
+        evaluated_quotes=int(len(near_even)), violations=len(implausible_near_even),
+        probability_band=[near_even_lower, near_even_upper],
+        maximum_relative_shift=float(current["max_near_even_mean_shift_relative"]),
+        maximum_absolute_shift=float(current["max_near_even_mean_shift_absolute"]),
+        samples=implausible_near_even[:20],
+    )
     max_kalshi = max(kalshi_residuals, default=0.0)
     _check(
         checks, "model.kalshi_source_residuals", max_kalshi <= float(current["max_kalshi_logit_rmse"]),
@@ -962,7 +1080,9 @@ def estimate_market_means(
 
     final_dispersion_valid = all(
         _finite(row["final_dispersion"]) and float(row["final_dispersion"]) > 0
-        and _text(row["dispersion_source"]) in {"historical_only", "historical_plus_kalshi"}
+        and _text(row["dispersion_source"]) in {
+            "historical_only", "historical_plus_current_market_map", "current_market_conflict_override",
+        }
         for _, row in updated_dispersions.iterrows()
     )
     _check(
@@ -995,14 +1115,15 @@ def estimate_market_means(
                 & projections["exclusion_reason"].astype(str).str.startswith("kalshi_curve_")
             ).sum()) if not projections.empty else 0,
             "historical_only_stats": sum(value["method"] == "historical_only" for value in update_reports.values()),
-            "historical_plus_kalshi_stats": sum(value["method"] == "historical_plus_kalshi" for value in update_reports.values()),
+            "historical_plus_current_market_stats": sum(value["method"] == "historical_plus_current_market_map" for value in update_reports.values()),
+            "current_market_conflict_override_stats": sum(value["method"] == "current_market_conflict_override" for value in update_reports.values()),
             "errors": len(errors),
             "warnings": len(warnings),
         },
     }
     report = deepcopy(historical_report)
     report["method"] = (
-        "historical_plus_kalshi" if any(value["method"] == "historical_plus_kalshi" for value in update_reports.values())
+        "historical_with_current_market_update" if any(value["method"] != "historical_only" for value in update_reports.values())
         else "historical_only"
     )
     report["market_update_version"] = MARKET_UPDATE_VERSION

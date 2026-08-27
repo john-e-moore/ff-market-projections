@@ -84,7 +84,7 @@ def _run_info(run_dir: Path, config: dict[str, Any]) -> pd.DataFrame:
         warnings.extend(check.get("message", "") for check in _json(run_dir / "artifacts" / filename).get("checks", []) if check.get("severity") == "warning" and not check.get("passed"))
     values = {
         "run_id": run_dir.name, "season": config["run"]["season"], "point_in_time_note": "Market-derived estimates reflect the source snapshot times recorded below.",
-        "scoring_scope": "market_supported_stats_only", "dispersion_note": "A shared per-stat historical dispersion calibration is used; eligible Kalshi updates are recorded in Calibration.",
+        "scoring_scope": "market_supported_stats_only", "dispersion_note": "A shared per-stat historical calibration is retained for audit; eligible multi-threshold current-market curves update or override misspecified historical shape as recorded in Calibration.",
         "source_snapshot_times_utc": "|".join(manifest.get("source_snapshot_times_utc", [])), "historical_provenance": json.dumps(manifest.get("historical", {}), sort_keys=True),
         "effective_config_sha256": environment.get("effective_config_sha256", manifest.get("effective_config_sha256", "")), "git_environment": json.dumps(environment, sort_keys=True),
         "warnings": " | ".join(warnings) if warnings else "None",
